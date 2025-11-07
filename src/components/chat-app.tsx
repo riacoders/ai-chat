@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { FormEvent } from 'react'
 import { toast } from 'sonner'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
 	MessageSquare,
 	Plus,
@@ -9,436 +10,420 @@ import {
 	Loader2,
 	Copy,
 	X,
-	Edit2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
+import axios from 'axios'
+import type { HistoryResponse, Message } from '@/interfaces'
+import { useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { APISERVICE } from '@/services'
 
-interface Message {
-	id: string
-	content: string
-	role: 'user' | 'assistant'
-	timestamp: string
-}
+const genId = () => crypto.randomUUID?.() ?? String(Date.now())
 
-interface Chat {
-	id: string
-	title: string
-	messages: Message[]
-}
-
-const ChatApp = () => {
-	const [chats, setChats] = useState<Chat[]>([])
-	const [currentChat, setCurrentChat] = useState<Chat | null>(null)
+export default function ChatApp() {
+	const [searchParams, setSearchParams] = useSearchParams()
+	const [chatId, setChatId] = useState<string | null>(null)
+	const [chats, setChats] = useState<HistoryResponse | null>(null)
+	const [currentChat, setCurrentChat] = useState<{
+		session_id: string
+		messages: Message[]
+	} | null>(null)
 	const [message, setMessage] = useState('')
 	const [sending, setSending] = useState(false)
+	const [aiTyping, setAiTyping] = useState(false)
+	const [typedResponse, setTypedResponse] = useState('')
 	const messagesEndRef = useRef<HTMLDivElement>(null)
+	const [reload, setReload] = useState(false)
 
+	// URL dan chatId
 	useEffect(() => {
-		const savedChats = localStorage.getItem('chats')
-		if (savedChats) {
-			const parsedChats: Chat[] = JSON.parse(savedChats)
-			setChats(parsedChats)
-			setCurrentChat(parsedChats[0] || null)
+		const id = searchParams.get('c')
+		if (id) {
+			setChatId(id)
+		} else {
+			const newId = genId()
+			setChatId(newId)
+			setSearchParams({ c: newId })
 		}
-	}, [])
+	}, [searchParams, setSearchParams])
 
+	// Barcha chatlar
 	useEffect(() => {
-		scrollToBottom()
-	}, [currentChat?.messages])
+		axios
+			.get(APISERVICE.history)
+			.then(res => setChats(res.data))
+			.catch(() => toast.error('Suhbatlar yuklanmadi'))
+	}, [reload])
 
+	// Joriy chat
+	useEffect(() => {
+		if (!chatId) return
+		axios
+			.get(`${APISERVICE.history}/${chatId}`)
+			.then(res => {
+				setCurrentChat(res.data)
+				setTypedResponse('')
+			})
+			.catch(() => toast.error('Suhbat ochilmadi'))
+	}, [chatId])
+
+	// Scroll
 	const scrollToBottom = () => {
 		messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
 	}
+	useEffect(() => {
+		const t = setTimeout(scrollToBottom, 100)
+		return () => clearTimeout(t)
+	}, [currentChat?.messages, aiTyping])
 
-	const saveChatsToStorage = (updatedChats: Chat[]) => {
-		localStorage.setItem('chats', JSON.stringify(updatedChats))
-	}
-
+	// Yangi chat
 	const createNewChat = () => {
-		const newChat: Chat = {
-			id: crypto.randomUUID(),
-			title: `Suhbat ${chats.length + 1}`,
-			messages: [],
-		}
-
-		const updatedChats = [newChat, ...chats]
-		setChats(updatedChats)
-		setCurrentChat(newChat)
-		saveChatsToStorage(updatedChats)
-		toast.success('Yangi suhbat yaratildi', {
-			position: 'top-center',
-			richColors: true,
-		})
+		const newId = genId()
+		setChatId(newId)
+		setCurrentChat({ session_id: newId, messages: [] })
+		setSearchParams({ c: newId })
+		setReload(!reload)
 	}
 
-	const deleteChat = (chatId: string, e: React.MouseEvent) => {
+	// O'chirish
+	const deleteChat = async (id: string, e: React.MouseEvent) => {
 		e.stopPropagation()
-
-		const updatedChats = chats.filter(chat => chat.id !== chatId)
-		setChats(updatedChats)
-		saveChatsToStorage(updatedChats)
-
-		if (currentChat?.id === chatId) {
-			setCurrentChat(updatedChats[0] || null)
-		}
-
-		toast.success("Suhbat o'chirildi", {
-			position: 'top-center',
-			richColors: true,
-		})
-	}
-
-	const copyChat = async (chat: Chat, e: React.MouseEvent) => {
-		e.stopPropagation()
-		if (!chat.messages || chat.messages.length === 0) {
-			toast.warning("Suhbat bo'sh", {
-				position: 'top-center',
-				richColors: true,
-			})
-			return
-		}
-
-		const text = chat.messages
-			.map(
-				m =>
-					`${m.role === 'user' ? 'Siz' : 'AI'} [${new Date(
-						m.timestamp
-					).toLocaleString()}]: ${m.content}`
-			)
-			.join('\n\n')
-
 		try {
-			if (navigator.clipboard && navigator.clipboard.writeText) {
-				await navigator.clipboard.writeText(text)
-			} else {
-				// fallback for older browsers
-				const ta = document.createElement('textarea')
-				ta.value = text
-				ta.setAttribute('readonly', '')
-				ta.style.position = 'absolute'
-				ta.style.left = '-9999px'
-				document.body.appendChild(ta)
-				ta.select()
-				document.execCommand('copy')
-				document.body.removeChild(ta)
-			}
-			toast.info('Suhbat nusxalandi', {
-				position: 'top-center',
-				richColors: true,
-			})
-		} catch (err) {
-			console.error(err)
-			toast.error('Nusxalashda xatolik', {
-				position: 'top-center',
-				richColors: true,
-			})
+			await axios.delete(APISERVICE.session(id))
+			toast.success('Suhbat o‘chirildi')
+			setReload(!reload)
+			if (chatId === id) createNewChat()
+		} catch {
+			toast.error('O‘chirishda xato')
 		}
 	}
 
-	const renameChat = (chat: Chat, e: React.MouseEvent) => {
-		e.stopPropagation()
-		const newTitle = window.prompt('Yangi chat nomi kiriting', chat.title)
-		if (newTitle === null) return // cancelled
-		const trimmed = newTitle.trim()
-		if (!trimmed) {
-			toast.warning("Bo'sh nom qabul qilinmaydi", { position: 'top-center' })
-			return
-		}
-
-		const updatedChats = chats.map(c =>
-			c.id === chat.id ? { ...c, title: trimmed } : c
-		)
-		setChats(updatedChats)
-		saveChatsToStorage(updatedChats)
-		if (currentChat?.id === chat.id) {
-			setCurrentChat({ ...currentChat, title: trimmed })
-		}
-		toast.success('Chat nomi yangilandi', { position: 'top-center' })
-	}
-
+	// Xabar yuborish
 	const sendMessage = async (e: FormEvent) => {
 		e.preventDefault()
-		if (!message.trim()) return
+		if (!message.trim() || !chatId) return
 
-		setSending(true)
-
-		const userMessage: Message = {
-			id: crypto.randomUUID(),
-			content: message,
+		const userMsg: Message = {
+			id: genId(),
 			role: 'user',
+			content: message.trim(),
 			timestamp: new Date().toISOString(),
 		}
 
-		// Ensure we have an active chat. If not, create one and persist it.
-		let activeChat = currentChat
-		if (!activeChat) {
-			const newChat: Chat = {
-				id: crypto.randomUUID(),
-				title: `Suhbat ${chats.length + 1}`,
-				messages: [],
-			}
-
-			// Use functional update to avoid stale state and persist immediately
-			setChats(prev => {
-				const next = [newChat, ...prev]
-				saveChatsToStorage(next)
-				return next
-			})
-			setCurrentChat(newChat)
-			activeChat = newChat
-		}
-
-		// Append the user message to the active chat and persist
-		const updatedChat: Chat = {
-			...activeChat!,
-			messages: [...activeChat!.messages, userMessage],
-		}
-
-		setCurrentChat(updatedChat)
+		setCurrentChat(prev => ({
+			session_id: chatId!,
+			messages: [...(prev?.messages || []), userMsg],
+		}))
 		setMessage('')
+		setSending(true)
+		setAiTyping(true)
 
-		setChats(prev => {
-			const exists = prev.some(c => c.id === updatedChat.id)
-			const next = exists
-				? prev.map(c => (c.id === updatedChat.id ? updatedChat : c))
-				: [updatedChat, ...prev]
-			saveChatsToStorage(next)
-			return next
-		})
+		try {
+			const res = await axios.post(APISERVICE.chat, {
+				message: message.trim(),
+				session_id: chatId,
+			})
 
-		// Simulate AI response
-		setTimeout(() => {
-			const aiMessage: Message = {
-				id: crypto.randomUUID(),
-				content: 'Test javob: ' + message,
+			const assistantMsg: Message = {
+				id: genId(),
 				role: 'assistant',
+				content: res.data.response || 'Javob yo‘q.',
 				timestamp: new Date().toISOString(),
 			}
 
-			const finalChat: Chat = {
-				...updatedChat,
-				messages: [...updatedChat.messages, aiMessage],
-			}
+			setCurrentChat(prev => ({
+				...prev!,
+				messages: [...prev!.messages, assistantMsg],
+			}))
 
-			setChats(prev => {
-				const next = prev.map(c => (c.id === finalChat.id ? finalChat : c))
-				saveChatsToStorage(next)
-				return next
-			})
-
-			setCurrentChat(finalChat)
+			// Typing animatsiyasi
+			let text = assistantMsg.content
+			setTypedResponse('')
+			let i = 0
+			const interval = setInterval(() => {
+				if (i < text.length) {
+					setTypedResponse(prev => prev + text[i])
+					i++
+				} else {
+					clearInterval(interval)
+					setAiTyping(false)
+				}
+			}, 15)
+		} catch (err: any) {
+			toast.error(err.response?.data?.error || 'Xato yuz berdi')
+			setCurrentChat(prev => ({
+				...prev!,
+				messages: prev!.messages.filter(m => m.id !== userMsg.id),
+			}))
+		} finally {
 			setSending(false)
-		}, 1000)
+		}
 	}
 
 	return (
-		<div className='min-h-screen w-screen bg-linear-to-br from-gray-900 via-slate-800 to-gray-900 p-4'>
-			<div className=' w-full mx-auto h-[calc(100vh-2rem)] flex gap-4'>
-				<Card className='w-80 p-4 flex flex-col backdrop-blur-md bg-white/10 border border-white/20 shadow-xl text-white'>
+		<div className='min-h-screen bg-linear-to-br from-blue-950 via-slate-900 to-blue-950 text-white p-4'>
+			<div className='max-w-screen mx-auto h-[calc(100vh-2rem)] flex gap-6'>
+				{/* Sidebar */}
+				<Card className='w-80 p-4 bg-black/30 backdrop-blur-2xl border border-blue-500/20 shadow-2xl flex flex-col'>
 					<div className='flex items-center justify-between mb-6'>
-						<h1 className='text-2xl! font-bold text-white'>Cyber AI Chat</h1>
+						<h1 className='text-3xl font-bold bg-linear-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent'>
+							Shunqor AI
+						</h1>
 						<Button
 							onClick={createNewChat}
 							size='icon'
-							className='backdrop-blur-sm bg-white/10 text-white cursor-pointer border border-white/20 hover:bg-white/20 transition-all'
+							className='bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30'
 						>
 							<Plus className='h-5 w-5' />
 						</Button>
 					</div>
 
-					<ScrollArea className='flex-1 overflow-y-auto px-3'>
-						{chats.length === 0 ? (
-							<div className='text-center text-gray-400 mt-8'>
-								<MessageSquare className='h-12 w-12 mx-auto mb-2 opacity-30' />
-								<p className='text-sm'>Hali suhbatlar yo'q</p>
-							</div>
-						) : (
-							<div className='space-y-2'>
-								{chats.map(chat => (
-									<div
-										key={chat.id}
-										onClick={() => setCurrentChat(chat)}
-										className={`group p-3 rounded-lg cursor-pointer flex items-center justify-between backdrop-blur-sm transition-all ${
-											currentChat?.id === chat.id
-												? 'bg-white/20 text-white shadow-lg border border-white/30'
-												: 'bg-white/10 hover:bg-white/15 border border-white/20'
-										}`}
-									>
-										<div>
-											<p className='font-medium truncate text-sm'>
-												{chat.title}
-											</p>
-											<p className='text-xs'>{chat.messages.length} xabar</p>
-										</div>
-										<div className='flex items-center gap-2'>
-											<Button
-												size='icon'
-												variant='ghost'
-												onClick={e => copyChat(chat, e)}
-												className='h-8 w-8 opacity-0 group-hover:opacity-100 text-white hover:text-black/90 transition-all'
-											>
-												<Copy className='h-4 w-4' />
-											</Button>
-											<Button
-												size='icon'
-												variant='ghost'
-												onClick={e => renameChat(chat, e)}
-												className='h-8 w-8 opacity-0 group-hover:opacity-100 text-white hover:text-black/90 transition-all'
-											>
-												<Edit2 className='h-4 w-4' />
-											</Button>
-											<Button
-												size='icon'
-												variant='ghost'
-												onClick={e => deleteChat(chat.id, e)}
-												className='h-8 w-8 opacity-0 group-hover:opacity-100 text-white hover:text-black/90 transition-all'
-											>
-												<Trash2 className='h-4 w-4' />
-											</Button>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
+					<ScrollArea className='flex-1 pr-2'>
+						<AnimatePresence>
+							{!chats || chats.sessions.length === 0 ? (
+								<motion.div
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									className='text-center text-gray-400 mt-10'
+								>
+									<MessageSquare className='h-12 w-12 mx-auto mb-3 opacity-40' />
+									<p className='text-sm text-white'>Hali suhbatlar yo‘q</p>
+								</motion.div>
+							) : (
+								<div className='space-y-2'>
+									{chats.sessions.map(chat => (
+										<motion.div
+											key={chat.session_id}
+											initial={{ opacity: 0, x: -20 }}
+											animate={{ opacity: 1, x: 0 }}
+											exit={{ opacity: 0, x: 20 }}
+											onClick={() => setSearchParams({ c: chat.session_id })}
+											className={`group p-3 rounded-xl cursor-pointer transition-all backdrop-blur-sm border ${
+												chatId === chat.session_id
+													? 'bg-blue-600/20 border-blue-500/50 shadow-lg'
+													: 'bg-white/5 hover:bg-blue-600/10 border-blue-500/20'
+											}`}
+										>
+											<div className='flex items-center justify-between w-11/12'>
+												<div className='flex-1 min-w-0'>
+													<p className='font-medium text-sm truncate text-white'>
+														{chat.last_message.split('\n')[0].slice(0, 35)}...
+													</p>
+													<p className='text-xs text-blue-300'>
+														{chat.message_count} xabar
+													</p>
+												</div>
+												<Button
+													size='icon'
+													variant='ghost'
+													onClick={e => deleteChat(chat.session_id, e)}
+													className='h-7 w-7 opacity-0 group-hover:opacity-100 text-red-400 hover:bg-red-500/20'
+												>
+													<Trash2 className='h-4 w-4' />
+												</Button>
+											</div>
+										</motion.div>
+									))}
+								</div>
+							)}
+						</AnimatePresence>
 					</ScrollArea>
 				</Card>
 
-				<Card className='relative flex-1 flex flex-col bg-gray-800/50 border-gray-700 shadow-xl text-white overflow-hidden'>
+				{/* Chat Area */}
+				<Card className='flex-1 bg-black/40 backdrop-blur-3xl border border-blue-500/20 shadow-2xl flex flex-col overflow-hidden'>
 					{currentChat ? (
 						<>
-							<div className='p-6 border-b border-gray-700 flex items-center justify-between'>
+							{/* Header */}
+							<div className='p-5 border-b border-blue-500/20 flex items-center justify-between backdrop-blur-sm'>
 								<div>
-									<h2 className='text-xl font-bold text-white'>
-										{currentChat.title}
+									<h2 className='text-xl font-bold text-blue-300'>
+										{currentChat.messages[0]?.content.slice(0, 40) ||
+											'Yangi suhbat'}
 									</h2>
-									<p className='text-sm text-gray-400'>
+									<p className='text-sm text-blue-400'>
 										{currentChat.messages.length} xabar
 									</p>
 								</div>
 								<Button
 									size='icon'
 									variant='ghost'
-									onClick={() => setCurrentChat(null)}
-									className='h-8 w-8 text-gray-400 hover:text-white transition-colors'
+									onClick={createNewChat}
+									className='text-blue-400 hover:text-white'
 								>
 									<X className='h-5 w-5' />
 								</Button>
 							</div>
 
-							<ScrollArea className='flex-1 p-6 pb-28 overflow-y-auto'>
-								<div className='space-y-4 max-w-4xl mx-auto'>
-									{currentChat.messages.map(msg => (
-										<div
-											key={msg.id}
-											className={`flex ${
-												msg.role === 'user' ? 'justify-end' : 'justify-start'
-											}`}
-										>
-											<div
-												className={`max-w-[75%] p-4 rounded-2xl shadow-md group relative flex flex-col ${
-													msg.role === 'user'
-														? 'bg-blue-600 text-white'
-														: 'bg-gray-700 text-gray-100 border border-gray-600'
+							{/* Messages */}
+							<ScrollArea className='flex-1 p-6 overflow-y-auto'>
+								<div className='max-w-4xl mx-auto space-y-5'>
+									<AnimatePresence>
+										{currentChat.messages.map((msg, i) => (
+											<motion.div
+												key={msg.id}
+												initial={{ opacity: 0, y: 15 }}
+												animate={{ opacity: 1, y: 0 }}
+												className={`flex ${
+													msg.role === 'user' ? 'justify-end' : 'justify-start'
 												}`}
 											>
-												<Button
-													size='icon'
-													variant='ghost'
-													onClick={e => {
-														e.stopPropagation()
-														navigator.clipboard.writeText(msg.content)
-														toast.info('Xabar nusxalandi', {
-															position: 'top-center',
-															richColors: true,
-														})
-													}}
-													className='absolute top-2 right-10 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity'
+												<div
+													className={`max-w-2xl p-4 rounded-2xl shadow-lg relative group backdrop-blur-md ${
+														msg.role === 'user'
+															? 'bg-linear-to-r from-blue-600 to-blue-700 text-white'
+															: 'bg-white/10 border border-blue-500/30'
+													}`}
 												>
-													<Copy className='h-3 w-3' />
-												</Button>
+													<Button
+														size='icon'
+														variant='ghost'
+														onClick={() => {
+															navigator.clipboard.writeText(msg.content)
+															toast.success('Nusxalandi')
+														}}
+														className='absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 text-blue-300'
+													>
+														<Copy className='h-4 w-4' />
+													</Button>
 
-												<Button
-													size='icon'
-													variant='ghost'
-													onClick={e => {
-														e.stopPropagation()
-														const updatedMessages = currentChat.messages.filter(
-															m => m.id !== msg.id
-														)
-														const updatedChat = {
-															...currentChat,
-															messages: updatedMessages,
-														}
-														setCurrentChat(updatedChat)
-														setChats(prev =>
-															prev.map(c =>
-																c.id === currentChat.id ? updatedChat : c
-															)
-														)
-														saveChatsToStorage(
-															chats.map(c =>
-																c.id === currentChat.id ? updatedChat : c
-															)
-														)
-														toast.success("Xabar o'chirildi", {
-															position: 'top-center',
-															richColors: true,
-														})
-													}}
-													className='absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity'
-												>
-													<Trash2 className='h-3 w-3' />
-												</Button>
+													{msg.role === 'assistant' ? (
+														<div className='prose prose-invert max-w-none text-gray-100'>
+															<ReactMarkdown
+																components={{
+																	code({
+																		//@ts-ignore
+																		inline,
+																		className,
+																		children,
+																		...props
+																	}) {
+																		const match = /language-(\w+)/.exec(
+																			className || ''
+																		)
+																		return !inline && match ? (
+																			<SyntaxHighlighter
+																				//@ts-ignore
+																				style={vscDarkPlus}
+																				language={match[1]}
+																				PreTag='div'
+																				className='rounded-lg mt-2 text-sm'
+																				{...props}
+																			>
+																				{String(children).replace(/\n$/, '')}
+																			</SyntaxHighlighter>
+																		) : (
+																			<code
+																				className='px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-200 text-sm'
+																				{...props}
+																			>
+																				{children}
+																			</code>
+																		)
+																	},
+																}}
+															>
+																{i === currentChat.messages.length - 1 &&
+																aiTyping
+																	? typedResponse
+																	: msg.content}
+															</ReactMarkdown>
+														</div>
+													) : (
+														<p className='pr-8 text-base'>{msg.content}</p>
+													)}
 
-												<p className='pr-8'>{msg.content}</p>
-												<p className='text-xs mt-2 text-gray-400'>
-													{new Date(msg.timestamp).toLocaleTimeString()}
-												</p>
-											</div>
-										</div>
-									))}
+													<p className='text-xs mt-2 text-blue-300 opacity-70'>
+														{new Date(msg.timestamp).toLocaleTimeString(
+															'uz-UZ',
+															{ hour: '2-digit', minute: '2-digit' }
+														)}
+													</p>
+												</div>
+											</motion.div>
+										))}
+
+										{aiTyping && (
+											<motion.div
+												initial={{ opacity: 0 }}
+												animate={{ opacity: 1 }}
+												className='flex justify-start'
+											>
+												<div className='bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-blue-500/30'>
+													<div className='flex gap-1.5'>
+														<span
+															className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
+															style={{ animationDelay: '0ms' }}
+														></span>
+														<span
+															className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
+															style={{ animationDelay: '150ms' }}
+														></span>
+														<span
+															className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
+															style={{ animationDelay: '300ms' }}
+														></span>
+													</div>
+												</div>
+											</motion.div>
+										)}
+									</AnimatePresence>
 
 									<div ref={messagesEndRef} />
 								</div>
 							</ScrollArea>
+
+							{/* Input */}
+							<div className='p-4 bg-linear-to-t from-black/70 to-transparent backdrop-blur-2xl'>
+								<form onSubmit={sendMessage} className='max-w-4xl mx-auto'>
+									<div className='flex gap-3 items-center'>
+										<Input
+											value={message}
+											onChange={e => setMessage(e.target.value)}
+											placeholder='Xabar yozing...'
+											className='flex-1 h-14 px-6 rounded-full bg-white/10 backdrop-blur-md border border-blue-500/30 text-white placeholder-blue-300 focus:border-blue-400 focus:ring-0 transition-all'
+											disabled={sending}
+										/>
+										<Button
+											type='submit'
+											size='icon'
+											disabled={sending || !message.trim()}
+											className='h-14 w-14 rounded-full bg-linear-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-xl'
+										>
+											{sending ? (
+												<Loader2 className='h-5 w-5 animate-spin' />
+											) : (
+												<Send className='h-5 w-5' />
+											)}
+										</Button>
+									</div>
+								</form>
+							</div>
 						</>
 					) : (
-						<div className='flex-1 flex flex-col items-center justify-center text-gray-400'>
-							<MessageSquare className='h-20 w-20 mb-4 opacity-20' />
-							<p className='text-xl mb-2'>Xush kelibsiz!</p>
-							<p className='text-sm mb-8'>
-								Yangi suhbatni boshlash uchun xabar yozing
-							</p>
+						<div className='flex-1 flex flex-col items-center justify-center text-center p-8'>
+							<motion.div
+								initial={{ scale: 0.8, opacity: 0 }}
+								animate={{ scale: 1, opacity: 1 }}
+								transition={{ duration: 0.5 }}
+							>
+								<div className='w-24 h-24 bg-linear-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center mb-6 shadow-2xl'>
+									<MessageSquare className='h-12 w-12 text-white' />
+								</div>
+								<h2 className='text-3xl font-bold mb-2 bg-linear-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent'>
+									Xush kelibsiz!
+								</h2>
+								<p className='text-blue-300 text-lg'>Yangi suhbatni boshlang</p>
+							</motion.div>
 						</div>
 					)}
-
-					<div className='absolute left-0 right-0 bottom-0 p-4 bg-linear-to-t from-blue-500/10 via-transparent to-transparent backdrop-blur-sm z-20'>
-						<form
-							onSubmit={sendMessage}
-							className='max-w-4xl mx-auto flex gap-3 items-center relative'
-						>
-							<Input
-								value={message}
-								onChange={e => setMessage(e.target.value)}
-								placeholder='Xabar yozing...'
-								className='flex-1 h-12 px-6 rounded-full bg-white/10 text-white placeholder-white/60 border border-white/10'
-							/>
-							<Button
-								type='submit'
-								disabled={sending || !message.trim()}
-								className='h-12 px-6 bg-transparent! text-white border border-none! absolute right-0'
-							>
-								{sending ? <Loader2 className='animate-spin' /> : <Send />}
-							</Button>
-						</form>
-					</div>
 				</Card>
 			</div>
 		</div>
 	)
 }
-
-export default ChatApp
