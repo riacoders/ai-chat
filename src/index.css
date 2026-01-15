@@ -116,4 +116,14 @@
 		font-family: 'Space Grotesk', sans-serif;
 		font-optical-sizing: auto;
 	}
+
+	::-webkit-scrollbar {
+		width: 7px;
+		background: #ccc;
+		border-radius: 7px;
+	}
+	::-webkit-scrollbar-thumb {
+		background: #0000ff85;
+		border-radius: 7px;
+	}
 }

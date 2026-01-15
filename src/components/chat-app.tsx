@@ -10,6 +10,9 @@ import {
 	Loader2,
 	Copy,
 	X,
+	CirclePlusIcon,
+	ArrowUpIcon,
+	ArrowDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +27,21 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { APISERVICE } from '@/services'
 import { showErrorToast } from '@/lib/utils'
 import Cookies from 'js-cookie'
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupText,
+	InputGroupTextarea,
+} from './ui/input-group'
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from './ui/dropdown-menu'
+import { Separator } from './ui/separator'
+import DOMPurify from 'dompurify'
 
 export default function ChatApp() {
 	const [searchParams, setSearchParams] = useSearchParams()
@@ -35,7 +53,11 @@ export default function ChatApp() {
 	const [aiTyping, setAiTyping] = useState(false)
 	const [typedResponse, setTypedResponse] = useState('')
 	const messagesEndRef = useRef<HTMLDivElement>(null)
+	const scrollAreaRef = useRef<HTMLDivElement>(null)
 	const [reload, setReload] = useState(false)
+	const [showScrollButton, setShowScrollButton] = useState(false)
+	const [userScrolledUp, setUserScrolledUp] = useState(false)
+	const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const token = Cookies.get('session_token')
 	const navigate = useNavigate()
 
@@ -69,12 +91,7 @@ export default function ChatApp() {
 			const id = searchParams.get('c')
 			if (id) {
 				setChatId(id)
-			} else {
-				const id = await newSessionId()
-				if (id) {
-					setChatId(id)
-					setSearchParams({ c: id })
-				}
+				setReload(!reload)
 			}
 		}
 		sync()
@@ -126,11 +143,54 @@ export default function ChatApp() {
 
 	const scrollToBottom = () => {
 		messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+		setShowScrollButton(false)
+		setUserScrolledUp(false)
 	}
+
+	const handleScroll = (e: any) => {
+		const scrollElement = e.target as HTMLDivElement
+		const isAtBottom =
+			scrollElement.scrollHeight -
+				scrollElement.scrollTop -
+				scrollElement.clientHeight <
+			100
+
+		setShowScrollButton(!isAtBottom)
+
+		if (!isAtBottom) {
+			setUserScrolledUp(true)
+			// Reset the timeout if user scrolls up
+			if (scrollTimeoutRef.current) {
+				clearTimeout(scrollTimeoutRef.current)
+			}
+			// Auto-enable scroll after user stops scrolling for 2 seconds
+			scrollTimeoutRef.current = setTimeout(() => {
+				setUserScrolledUp(false)
+			}, 2000)
+		}
+	}
+
 	useEffect(() => {
 		const t = setTimeout(scrollToBottom, 100)
 		return () => clearTimeout(t)
-	}, [currentChat, aiTyping])
+	}, [currentChat])
+
+	useEffect(() => {
+		if (aiTyping && !userScrolledUp) {
+			const t = setTimeout(() => {
+				scrollToBottom()
+			}, 300)
+			return () => clearTimeout(t)
+		}
+	}, [typedResponse, aiTyping, userScrolledUp])
+
+	useEffect(() => {
+		return () => {
+			if (scrollTimeoutRef.current) {
+				clearTimeout(scrollTimeoutRef.current)
+			}
+		}
+	}, [])
 
 	const createNewChat = async () => {
 		const id = await newSessionId()
@@ -143,6 +203,7 @@ export default function ChatApp() {
 
 	const deleteChat = async (id: string, e: React.MouseEvent) => {
 		e.stopPropagation()
+
 		try {
 			await axios.delete(`${APISERVICE.sessions}/${id}`, {
 				headers: {
@@ -154,19 +215,25 @@ export default function ChatApp() {
 				richColors: true,
 			})
 			setReload(!reload)
-			if (chatId === id) createNewChat()
 		} catch (err) {
 			showErrorToast('O‘chirishda xato')
 			if (axios.isAxiosError(err) && err.response?.status === 401) {
 				navigate('/login')
 			}
 		}
+
+		if (chatId === id) {
+			navigate('/')
+			window.location.reload
+		}
 	}
 
 	const sendMessage = async (e: FormEvent) => {
 		e.preventDefault()
 		const text = message.trim()
-		if (!text || !chatId) return
+		if (!text) return
+
+		const sanitizedText = DOMPurify.sanitize(text, { ALLOWED_TAGS: [] })
 
 		setMessage('')
 		setSending(true)
@@ -175,7 +242,7 @@ export default function ChatApp() {
 
 		setCurrentChat(prev => [
 			...prev,
-			{ role: 'user', content: text, created_at: Date.now() },
+			{ role: 'user', content: sanitizedText, created_at: Date.now() },
 			{ role: 'assistant', content: '', created_at: Date.now() },
 		])
 
@@ -183,8 +250,8 @@ export default function ChatApp() {
 			const res = await axios.post(
 				APISERVICE.chat,
 				{
-					question: text,
-					session_id: chatId,
+					question: sanitizedText,
+					...(chatId && { session_id: chatId }),
 				},
 				{
 					headers: {
@@ -192,6 +259,10 @@ export default function ChatApp() {
 					},
 				}
 			)
+
+			setSession(res.data.session_id)
+			setChatId(res.data.session_id)
+			navigate(`/?c=${res.data.session_id}`)
 
 			const answerText = res.data.answer || 'Javob yo‘q.'
 
@@ -232,7 +303,7 @@ export default function ChatApp() {
 	return (
 		<div className='min-h-screen bg-linear-to-br from-blue-950 via-slate-900 to-blue-950 text-white p-4'>
 			<div className='max-w-screen mx-auto h-[calc(100vh-2rem)] flex gap-6'>
-				<Card className='w-96 p-4 bg-black/30 backdrop-blur-2xl border border-blue-500/20 shadow-2xl flex flex-col'>
+				<Card className='w-72 p-4 bg-black/30 backdrop-blur-2xl border border-blue-500/20 shadow-2xl flex flex-col'>
 					<div className='flex items-center justify-between mb-6'>
 						<div className='flex items-center gap-2'>
 							<img src='/images/logo-white.png' alt='logo' className='h-10' />
@@ -262,37 +333,44 @@ export default function ChatApp() {
 								</motion.div>
 							) : (
 								<div className='space-y-2 '>
-									{chats.map(chat => (
-										<motion.div
-											key={chat.session_id}
-											initial={{ opacity: 0, x: -20 }}
-											animate={{ opacity: 1, x: 0 }}
-											exit={{ opacity: 0, x: 20 }}
-											onClick={() => setSearchParams({ c: chat.session_id })}
-											className={`group p-3 rounded-xl cursor-pointer transition-all backdrop-blur-sm border w-[99%] ${
-												chatId === chat.session_id
-													? 'bg-blue-600/20 border-blue-500/50 shadow-lg'
-													: 'bg-white/5 hover:bg-blue-600/10 border-blue-500/20'
-											}`}
-										>
-											<div className='flex items-center justify-between w-full'>
-												<div className='flex-1 min-w-0'>
-													<p className='font-medium text-sm truncate text-white'>
-														{chat.session_id.split('\n')[0].slice(0, 35)}...
-													</p>
-													<p className='text-xs text-blue-300'>10 xabar</p>
+									{chats
+										.sort((a, b) => b.created_at - a.created_at)
+										.map(chat => (
+											<motion.div
+												key={chat.session_id}
+												initial={{ opacity: 0, x: -20 }}
+												animate={{ opacity: 1, x: 0 }}
+												exit={{ opacity: 0, x: 20 }}
+												onClick={() => setSearchParams({ c: chat.session_id })}
+												className={`group p-3 rounded-xl cursor-pointer transition-all backdrop-blur-sm border w-[99%] ${
+													chatId === chat.session_id
+														? 'bg-blue-600/20 border-blue-500/50 shadow-lg'
+														: 'bg-white/5 hover:bg-blue-600/10 border-blue-500/20'
+												}`}
+											>
+												<div className='flex items-center justify-between w-full'>
+													<div className='flex-1 min-w-0'>
+														<p className='font-medium text-sm truncate text-white'>
+															{chat.chat_name
+																? chat.chat_name.split('\n')[0].slice(0, 35)
+																: 'Yangi chat'}
+															...
+														</p>
+														<p className='text-xs text-blue-300'>
+															{chat.chat_count}
+														</p>
+													</div>
+													<Button
+														size='icon'
+														variant='ghost'
+														onClick={e => deleteChat(chat.session_id, e)}
+														className='h-7 w-7 opacity-0 group-hover:opacity-100 text-red-400 hover:bg-red-500/20'
+													>
+														<Trash2 className='h-4 w-4' />
+													</Button>
 												</div>
-												<Button
-													size='icon'
-													variant='ghost'
-													onClick={e => deleteChat(chat.session_id, e)}
-													className='h-7 w-7 opacity-0 group-hover:opacity-100 text-red-400 hover:bg-red-500/20'
-												>
-													<Trash2 className='h-4 w-4' />
-												</Button>
-											</div>
-										</motion.div>
-									))}
+											</motion.div>
+										))}
 								</div>
 							)}
 						</AnimatePresence>
@@ -300,7 +378,7 @@ export default function ChatApp() {
 				</Card>
 
 				<Card className='flex-1 bg-black/40 backdrop-blur-3xl border border-blue-500/20 shadow-2xl flex flex-col overflow-hidden'>
-					{currentChat ? (
+					{chatId ? (
 						<>
 							<div className='p-5 border-b border-blue-500/20 flex items-center justify-between backdrop-blur-sm'>
 								<div>
@@ -314,14 +392,21 @@ export default function ChatApp() {
 								<Button
 									size='icon'
 									variant='ghost'
-									onClick={createNewChat}
+									onClick={() => {
+										navigate('/')
+										window.location.reload()
+									}}
 									className='text-blue-400 hover:text-black'
 								>
 									<X className='h-5 w-5' />
 								</Button>
 							</div>
 
-							<ScrollArea className='flex-1 p-6 overflow-y-auto relative'>
+							<ScrollArea
+								ref={scrollAreaRef}
+								onScroll={handleScroll}
+								className='flex-1 p-6 overflow-y-auto relative'
+							>
 								<img
 									src='/images/logo-bg.png'
 									alt='logo'
@@ -350,7 +435,10 @@ export default function ChatApp() {
 														variant='ghost'
 														onClick={() => {
 															navigator.clipboard.writeText(msg.content)
-															toast.success('Nusxalandi')
+															toast.success('Nusxalandi', {
+																position: 'top-center',
+																richColors: true,
+															})
 														}}
 														className='absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 text-blue-300'
 													>
@@ -399,7 +487,11 @@ export default function ChatApp() {
 															</ReactMarkdown>
 														</div>
 													) : (
-														<p className='pr-8 text-base'>{msg.content}</p>
+														<>
+															{msg.content.length > 0 && (
+																<p className='pr-8 text-base'>{msg.content}</p>
+															)}
+														</>
 													)}
 
 													<p className='text-xs mt-2 text-blue-300 opacity-70'>
@@ -442,8 +534,106 @@ export default function ChatApp() {
 								</div>
 							</ScrollArea>
 
+							{showScrollButton && (
+								<motion.div
+									initial={{ opacity: 0, y: 10 }}
+									animate={{ opacity: 1, y: 0 }}
+									exit={{ opacity: 0, y: 10 }}
+									className='absolute bottom-40 left-1/2 -translate-x-1/2 z-20'
+								>
+									<Button
+										onClick={scrollToBottom}
+										className='rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg'
+										size='icon'
+									>
+										<ArrowDown className='h-5 w-5' />
+									</Button>
+								</motion.div>
+							)}
+
 							<div className='p-4 bg-linear-to-t from-black/70 to-transparent backdrop-blur-2xl'>
 								<form onSubmit={sendMessage} className='max-w-4xl mx-auto'>
+									<div className='flex gap-3 items-center'>
+										<InputGroup>
+											<InputGroupTextarea
+												value={message}
+												onChange={e => setMessage(e.target.value)}
+												onKeyDown={e => {
+													if (e.key === 'Enter' && !e.shiftKey) {
+														e.preventDefault()
+														sendMessage(e as any)
+													}
+												}}
+												placeholder='Biror nima yozing...'
+												className='text-white'
+											/>
+											<InputGroupAddon align='block-end'>
+												{/* <InputGroupButton
+													variant='outline'
+													className='rounded-full'
+													size='icon-xs'
+												>
+													<CirclePlusIcon />
+												</InputGroupButton>
+												<DropdownMenu>
+													<DropdownMenuTrigger asChild>
+														<InputGroupButton variant='ghost'>
+															Model
+														</InputGroupButton>
+													</DropdownMenuTrigger>
+													<DropdownMenuContent
+														side='top'
+														align='start'
+														className='[--radius:0.95rem]'
+													>
+														<DropdownMenuItem>Auto</DropdownMenuItem>
+														<DropdownMenuItem>Pro</DropdownMenuItem>
+													</DropdownMenuContent>
+												</DropdownMenu> */}
+												<InputGroupText className='ml-auto'></InputGroupText>
+												<Separator orientation='vertical' className='h-4!' />
+												<InputGroupButton
+													variant='default'
+													className='rounded-full'
+													size='icon-xs'
+													disabled={sending || aiTyping || !message.trim()}
+													type='submit'
+												>
+													<ArrowUpIcon />
+													<span className='sr-only'>Send</span>
+												</InputGroupButton>
+											</InputGroupAddon>
+										</InputGroup>
+									</div>
+								</form>
+							</div>
+						</>
+					) : (
+						<div className='flex items-center flex-col gap-1 justify-center w-full mt-96'>
+							<div className='flex-1 flex flex-col items-center justify-center text-center p-8'>
+								<motion.div
+									initial={{ scale: 0.8, opacity: 0 }}
+									animate={{ scale: 1, opacity: 1 }}
+									transition={{ duration: 0.5 }}
+								>
+									<div className='flex flex-col items-center justify-center'>
+										<div className='w-24 h-24 bg-linear-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center mb-6 shadow-2xl'>
+											<MessageSquare className='h-12 w-12 text-white' />
+										</div>
+										<h2 className='text-3xl font-bold mb-2 bg-linear-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent'>
+											Xush kelibsiz!
+										</h2>
+										<p className='text-blue-300 text-lg'>
+											Yangi suhbatni boshlang
+										</p>
+									</div>
+								</motion.div>
+							</div>
+							<div className='p-4	 w-full mt-5'>
+								<form
+									onSubmit={sendMessage}
+									className='max-w-4xl mx-auto w-full'
+								>
 									<div className='flex gap-3 items-center'>
 										<Input
 											value={message}
@@ -467,26 +657,6 @@ export default function ChatApp() {
 									</div>
 								</form>
 							</div>
-						</>
-					) : (
-						<div className='flex-1 flex flex-col items-center justify-center text-center p-8'>
-							<motion.div
-								initial={{ scale: 0.8, opacity: 0 }}
-								animate={{ scale: 1, opacity: 1 }}
-								transition={{ duration: 0.5 }}
-							>
-								<div className='flex flex-col items-center justify-center'>
-									<div className='w-24 h-24 bg-linear-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center mb-6 shadow-2xl'>
-										<MessageSquare className='h-12 w-12 text-white' />
-									</div>
-									<h2 className='text-3xl font-bold mb-2 bg-linear-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent'>
-										Xush kelibsiz!
-									</h2>
-									<p className='text-blue-300 text-lg'>
-										Yangi suhbatni boshlang
-									</p>
-								</div>
-							</motion.div>
 						</div>
 					)}
 				</Card>
