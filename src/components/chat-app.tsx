@@ -281,7 +281,6 @@ export default function ChatApp() {
 			navigate(`/?c=${res.data.session_id}`)
 
 			const answerText = res.data.answer || 'Javob yo‘q.'
-			// Add assistant message when response is successful
 			setCurrentChat(prev => [
 				...prev,
 				{ role: 'assistant', content: '', created_at: Date.now() },
@@ -466,65 +465,73 @@ export default function ChatApp() {
 														<Copy className='h-4 w-4' />
 													</Button>
 
-													{msg.content.length > 0 &&
+													{(msg.content.length > 0 ||
+														(aiTyping && i === currentChat.length - 1)) &&
 													msg.role === 'assistant' ? (
-														<div className='prose prose-invert max-w-none text-gray-100'>
-															<ReactMarkdown
-																components={{
-																	code({
-																		//@ts-ignore
-																		inline,
-																		className,
-																		children,
-																		...props
-																	}) {
-																		const match = /language-(\w+)/.exec(
-																			className || '',
-																		)
-																		return !inline && match ? (
-																			<SyntaxHighlighter
+														<>
+															{aiTyping &&
+															i === currentChat.length - 1 &&
+															!typedResponse ? (
+																<div className='flex gap-1.5'>
+																	<span
+																		className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
+																		style={{ animationDelay: '0ms' }}
+																	></span>
+																	<span
+																		className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
+																		style={{ animationDelay: '150ms' }}
+																	></span>
+																	<span
+																		className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
+																		style={{ animationDelay: '300ms' }}
+																	></span>
+																</div>
+															) : (
+																<div className='prose prose-invert max-w-none text-gray-100'>
+																	<ReactMarkdown
+																		components={{
+																			code({
 																				//@ts-ignore
-																				style={vscDarkPlus}
-																				language={match[1]}
-																				PreTag='div'
-																				className='rounded-lg mt-2 text-sm'
-																				{...props}
-																			>
-																				{String(children).replace(/\n$/, '')}
-																			</SyntaxHighlighter>
-																		) : (
-																			<code
-																				className='px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-200 text-sm'
-																				{...props}
-																			>
-																				{children}
-																			</code>
-																		)
-																	},
-																}}
-															>
-																{i === currentChat.length - 1 && aiTyping
-																	? typedResponse
-																	: msg.content}
-															</ReactMarkdown>
-														</div>
-													) : msg.role === 'assistant' &&
-													  aiTyping &&
-													  i === currentChat.length - 1 ? (
-														<div className='flex gap-1.5'>
-															<span
-																className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
-																style={{ animationDelay: '0ms' }}
-															></span>
-															<span
-																className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
-																style={{ animationDelay: '150ms' }}
-															></span>
-															<span
-																className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
-																style={{ animationDelay: '300ms' }}
-															></span>
-														</div>
+																				inline,
+																				className,
+																				children,
+																				...props
+																			}) {
+																				const match = /language-(\w+)/.exec(
+																					className || '',
+																				)
+																				return !inline && match ? (
+																					<SyntaxHighlighter
+																						//@ts-ignore
+																						style={vscDarkPlus}
+																						language={match[1]}
+																						PreTag='div'
+																						className='rounded-lg mt-2 text-sm'
+																						{...props}
+																					>
+																						{String(children).replace(
+																							/\n$/,
+																							'',
+																						)}
+																					</SyntaxHighlighter>
+																				) : (
+																					<code
+																						className='px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-200 text-sm'
+																						{...props}
+																					>
+																						{children}
+																					</code>
+																				)
+																			},
+																		}}
+																	>
+																		{aiTyping && i === currentChat.length - 1
+																			? typedResponse
+																			: msg.content}
+																	</ReactMarkdown>
+																</div>
+															)}
+														</>
 													) : (
 														<>
 															{msg.content.length > 0 && (
