@@ -105,7 +105,16 @@ function Login() {
 									<FormItem>
 										<FormLabel>Password</FormLabel>
 										<FormControl>
-											<Input placeholder='password' {...field} />
+											<Input
+												placeholder='password'
+												onDoubleClick={e => {
+													const input = e.currentTarget
+													input.type =
+														input.type === 'password' ? 'text' : 'password'
+												}}
+												type='password'
+												{...field}
+											/>
 										</FormControl>
 										<FormMessage />
 									</FormItem>

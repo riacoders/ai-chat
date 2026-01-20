@@ -25,7 +25,7 @@ import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { APISERVICE } from '@/services'
-import { showErrorToast } from '@/lib/utils'
+import { cn, showErrorToast } from '@/lib/utils'
 import Cookies from 'js-cookie'
 import {
 	InputGroup,
@@ -42,6 +42,13 @@ import {
 } from './ui/dropdown-menu'
 import { Separator } from './ui/separator'
 import DOMPurify from 'dompurify'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from './ui/select'
 
 export default function ChatApp() {
 	const [searchParams, setSearchParams] = useSearchParams()
@@ -60,8 +67,17 @@ export default function ChatApp() {
 	const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const token = Cookies.get('session_token')
 	const navigate = useNavigate()
-
+	const [mode, setMode] = useState('ask')
 	const [session, setSession] = useState<string | null>(null)
+	const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+	useEffect(() => {
+		if (!textareaRef.current) return
+
+		const textarea = textareaRef.current
+		textarea.style.height = 'auto'
+		textarea.style.height = textarea.scrollHeight + 'px'
+	}, [message])
 
 	const newSessionId = async (): Promise<string | null> => {
 		try {
@@ -72,7 +88,7 @@ export default function ChatApp() {
 					headers: {
 						Authorization: `Bearer ${token}`,
 					},
-				}
+				},
 			)
 			setSession(res.data.session_id)
 
@@ -124,7 +140,7 @@ export default function ChatApp() {
 							Accept: 'application/json',
 							Authorization: `Bearer ${token}`,
 						},
-					}
+					},
 				)
 				const data = res.data
 
@@ -243,7 +259,6 @@ export default function ChatApp() {
 		setCurrentChat(prev => [
 			...prev,
 			{ role: 'user', content: sanitizedText, created_at: Date.now() },
-			{ role: 'assistant', content: '', created_at: Date.now() },
 		])
 
 		try {
@@ -252,12 +267,13 @@ export default function ChatApp() {
 				{
 					question: sanitizedText,
 					...(chatId && { session_id: chatId }),
+					mode,
 				},
 				{
 					headers: {
 						Authorization: `Bearer ${token}`,
 					},
-				}
+				},
 			)
 
 			setSession(res.data.session_id)
@@ -265,7 +281,11 @@ export default function ChatApp() {
 			navigate(`/?c=${res.data.session_id}`)
 
 			const answerText = res.data.answer || 'Javob yo‘q.'
-
+			// Add assistant message when response is successful
+			setCurrentChat(prev => [
+				...prev,
+				{ role: 'assistant', content: '', created_at: Date.now() },
+			])
 			let i = 0
 			const interval = setInterval(() => {
 				if (i < answerText.length) {
@@ -291,6 +311,7 @@ export default function ChatApp() {
 				}
 			}, 15)
 		} catch (err: any) {
+			setAiTyping(false)
 			showErrorToast(err)
 			if (axios.isAxiosError(err) && err.response?.status === 401) {
 				navigate('/login')
@@ -412,7 +433,7 @@ export default function ChatApp() {
 									alt='logo'
 									className='absolute top-1/2 left-1/2 -translate-1/2 opacity-[2%]'
 								/>
-								<div className='max-w-4xl mx-auto w-full -translate-x-1/2 left-1/2 space-y-5 absolute z-10'>
+								<div className='max-w-4xl mx-auto w-full -translate-x-1/2 left-1/2 space-y-5 absolute z-10 pb-20'>
 									<AnimatePresence>
 										{currentChat?.map((msg, i) => (
 											<motion.div
@@ -424,7 +445,7 @@ export default function ChatApp() {
 												}`}
 											>
 												<div
-													className={`max-w-2xl p-4 rounded-2xl shadow-lg relative group backdrop-blur-md ${
+													className={`max-w-2xl p-4 rounded-2xl shadow-lg relative group backdrop-blur-md  ${
 														msg.role === 'user'
 															? 'bg-linear-to-r from-blue-600 to-blue-700 text-white'
 															: 'bg-white/10 border border-blue-500/30'
@@ -445,7 +466,8 @@ export default function ChatApp() {
 														<Copy className='h-4 w-4' />
 													</Button>
 
-													{msg.role === 'assistant' ? (
+													{msg.content.length > 0 &&
+													msg.role === 'assistant' ? (
 														<div className='prose prose-invert max-w-none text-gray-100'>
 															<ReactMarkdown
 																components={{
@@ -457,7 +479,7 @@ export default function ChatApp() {
 																		...props
 																	}) {
 																		const match = /language-(\w+)/.exec(
-																			className || ''
+																			className || '',
 																		)
 																		return !inline && match ? (
 																			<SyntaxHighlighter
@@ -486,6 +508,23 @@ export default function ChatApp() {
 																	: msg.content}
 															</ReactMarkdown>
 														</div>
+													) : msg.role === 'assistant' &&
+													  aiTyping &&
+													  i === currentChat.length - 1 ? (
+														<div className='flex gap-1.5'>
+															<span
+																className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
+																style={{ animationDelay: '0ms' }}
+															></span>
+															<span
+																className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
+																style={{ animationDelay: '150ms' }}
+															></span>
+															<span
+																className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
+																style={{ animationDelay: '300ms' }}
+															></span>
+														</div>
 													) : (
 														<>
 															{msg.content.length > 0 && (
@@ -497,37 +536,40 @@ export default function ChatApp() {
 													<p className='text-xs mt-2 text-blue-300 opacity-70'>
 														{new Date(msg.created_at).toLocaleTimeString(
 															'uz-UZ',
-															{ hour: '2-digit', minute: '2-digit' }
+															{ hour: '2-digit', minute: '2-digit' },
 														)}
 													</p>
 												</div>
 											</motion.div>
 										))}
 
-										{aiTyping && (
-											<motion.div
-												initial={{ opacity: 0 }}
-												animate={{ opacity: 1 }}
-												className='flex justify-start'
-											>
-												<div className='bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-blue-500/30'>
-													<div className='flex gap-1.5'>
-														<span
-															className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
-															style={{ animationDelay: '0ms' }}
-														></span>
-														<span
-															className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
-															style={{ animationDelay: '150ms' }}
-														></span>
-														<span
-															className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
-															style={{ animationDelay: '300ms' }}
-														></span>
+										{aiTyping &&
+											currentChat.length > 0 &&
+											currentChat[currentChat.length - 1]?.role !==
+												'assistant' && (
+												<motion.div
+													initial={{ opacity: 0 }}
+													animate={{ opacity: 1 }}
+													className='flex justify-start'
+												>
+													<div className='bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-blue-500/30'>
+														<div className='flex gap-1.5'>
+															<span
+																className='w-2 h-2 bg-blue-400 rounded-full animate-bounce'
+																style={{ animationDelay: '0ms' }}
+															></span>
+															<span
+																className='w-2 h-2 bg-blue-500 rounded-full animate-bounce'
+																style={{ animationDelay: '150ms' }}
+															></span>
+															<span
+																className='w-2 h-2 bg-cyan-400 rounded-full animate-bounce'
+																style={{ animationDelay: '300ms' }}
+															></span>
+														</div>
 													</div>
-												</div>
-											</motion.div>
-										)}
+												</motion.div>
+											)}
 									</AnimatePresence>
 
 									<div ref={messagesEndRef} />
@@ -551,11 +593,15 @@ export default function ChatApp() {
 								</motion.div>
 							)}
 
-							<div className='p-4 bg-linear-to-t from-black/70 to-transparent backdrop-blur-2xl'>
-								<form onSubmit={sendMessage} className='max-w-4xl mx-auto'>
-									<div className='flex gap-3 items-center'>
-										<InputGroup>
-											<InputGroupTextarea
+							<div className='fixed bottom-0 left-0 right-0 z-50 bg-linear-to-t from-black/60 to-transparent'>
+								<form
+									onSubmit={sendMessage}
+									className='max-w-4xl mx-auto px-4 pb-4'
+								>
+									<div className='flex items-end gap-3 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 shadow-lg p-3'>
+										<div className='flex items-center flex-auto h-full'>
+											<textarea
+												ref={textareaRef}
 												value={message}
 												onChange={e => setMessage(e.target.value)}
 												onKeyDown={e => {
@@ -564,48 +610,53 @@ export default function ChatApp() {
 														sendMessage(e as any)
 													}
 												}}
-												placeholder='Biror nima yozing...'
-												className='text-white'
+												placeholder='Xabaringizni yozing...'
+												rows={1}
+												className=' flex-1 resize-none bg-transparent text-white placeholder:text-white/40 focus:outline-none text-sm leading-relaxed overflow-y-auto max-h-40 transition-[height] duration-200 ease-out min-h-7'
 											/>
-											<InputGroupAddon align='block-end'>
-												{/* <InputGroupButton
-													variant='outline'
-													className='rounded-full'
-													size='icon-xs'
+										</div>
+
+										<Select
+											value={mode}
+											onValueChange={value => setMode(value)}
+										>
+											<SelectTrigger className='h-9 rounded-full px-3 text-xs bg-white/10 border-white/20 hover:bg-white/20 transition text-white'>
+												<SelectValue
+													placeholder='Mode'
+													className='text-white'
+												/>
+											</SelectTrigger>
+											<SelectContent className='bg-[#333] border-white/20'>
+												<SelectItem
+													className='hover:bg-white/10 focus:bg-white/10 focus:text-white text-white text-xs'
+													value='ask'
 												>
-													<CirclePlusIcon />
-												</InputGroupButton>
-												<DropdownMenu>
-													<DropdownMenuTrigger asChild>
-														<InputGroupButton variant='ghost'>
-															Model
-														</InputGroupButton>
-													</DropdownMenuTrigger>
-													<DropdownMenuContent
-														side='top'
-														align='start'
-														className='[--radius:0.95rem]'
-													>
-														<DropdownMenuItem>Auto</DropdownMenuItem>
-														<DropdownMenuItem>Pro</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu> */}
-												<InputGroupText className='ml-auto'></InputGroupText>
-												<Separator orientation='vertical' className='h-4!' />
-												<InputGroupButton
-													variant='default'
-													className='rounded-full'
-													size='icon-xs'
-													disabled={sending || aiTyping || !message.trim()}
-													type='submit'
+													💬 Ask
+												</SelectItem>
+												<SelectItem
+													className='hover:bg-white/10 focus:bg-white/10 focus:text-white text-white text-xs'
+													value='agent'
 												>
-													<ArrowUpIcon />
-													<span className='sr-only'>Send</span>
-												</InputGroupButton>
-											</InputGroupAddon>
-										</InputGroup>
+													🤖 Agent
+												</SelectItem>
+											</SelectContent>
+										</Select>
+
+										<button
+											type='submit'
+											disabled={sending || aiTyping || !message.trim()}
+											className=' h-9 w-9 flex items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-purple-600 text-white shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100 '
+										>
+											<ArrowUpIcon className='h-4 w-4' />
+										</button>
 									</div>
 								</form>
+								<div className='flex items-center justify-center'>
+									<p className='text-center text-muted-foreground text-xs'>
+										SecGPT xatoliklar qilishi mumkin. Iltimos muhim
+										ma'lumotlarni tekshirib oling.
+									</p>
+								</div>
 							</div>
 						</>
 					) : (
@@ -629,33 +680,70 @@ export default function ChatApp() {
 									</div>
 								</motion.div>
 							</div>
-							<div className='p-4	 w-full mt-5'>
+							<div className='fixed bottom-0 left-0 right-0 z-50 bg-linear-to-t from-black/60 to-transparent'>
 								<form
 									onSubmit={sendMessage}
-									className='max-w-4xl mx-auto w-full'
+									className='max-w-4xl mx-auto px-4 pb-4'
 								>
-									<div className='flex gap-3 items-center'>
-										<Input
-											value={message}
-											onChange={e => setMessage(e.target.value)}
-											placeholder='Xabar yozing...'
-											className='flex-1 h-14 px-6 rounded-full bg-white/10 backdrop-blur-md border border-blue-500/30 text-white placeholder-blue-300 focus:border-blue-400 focus:ring-0 transition-all'
-											disabled={sending}
-										/>
-										<Button
-											type='submit'
-											size='icon'
-											disabled={sending || !message.trim()}
-											className='h-14 w-14 rounded-full bg-linear-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-xl'
+									<div className='flex items-end gap-3 rounded-full bg-white/5 backdrop-blur-xl border border-white/10 shadow-lg p-3'>
+										<div className='flex items-center flex-auto h-full'>
+											<textarea
+												ref={textareaRef}
+												value={message}
+												onChange={e => setMessage(e.target.value)}
+												onKeyDown={e => {
+													if (e.key === 'Enter' && !e.shiftKey) {
+														e.preventDefault()
+														sendMessage(e as any)
+													}
+												}}
+												placeholder='Xabaringizni yozing...'
+												rows={1}
+												className=' flex-1 resize-none bg-transparent text-white placeholder:text-white/40 focus:outline-none text-sm leading-relaxed overflow-y-auto max-h-40 transition-[height] duration-200 ease-out min-h-7'
+											/>
+										</div>
+
+										<Select
+											value={mode}
+											onValueChange={value => setMode(value)}
 										>
-											{sending || aiTyping ? (
-												<Loader2 className='h-5 w-5 animate-spin' />
-											) : (
-												<Send className='h-5 w-5' />
-											)}
-										</Button>
+											<SelectTrigger className='h-9 rounded-full px-3 text-xs bg-white/10 border-white/20 hover:bg-white/20 transition text-white'>
+												<SelectValue
+													placeholder='Mode'
+													className='text-white'
+												/>
+											</SelectTrigger>
+											<SelectContent className='bg-[#333] border-white/20'>
+												<SelectItem
+													className='hover:bg-white/10 focus:bg-white/10 focus:text-white text-white text-xs'
+													value='ask'
+												>
+													💬 Ask
+												</SelectItem>
+												<SelectItem
+													className='hover:bg-white/10 focus:bg-white/10 focus:text-white text-white text-xs'
+													value='agent'
+												>
+													🤖 Agent
+												</SelectItem>
+											</SelectContent>
+										</Select>
+
+										<button
+											type='submit'
+											disabled={sending || aiTyping || !message.trim()}
+											className=' h-9 w-9 flex items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-purple-600 text-white shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:hover:scale-100 '
+										>
+											<ArrowUpIcon className='h-4 w-4' />
+										</button>
 									</div>
 								</form>
+							</div>
+							<div className='flex items-center justify-center'>
+								<p className='text-center text-muted-foreground text-xs'>
+									SecGPT xatoliklar qilishi mumkin. Iltimos muhim ma'lumotlarni
+									tekshirib oling.
+								</p>
 							</div>
 						</div>
 					)}
