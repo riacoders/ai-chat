@@ -119,11 +119,12 @@
 
 	::-webkit-scrollbar {
 		width: 7px;
-		background: #ccc;
+		background: #f1f1f1;
 		border-radius: 7px;
+		height: 5px;
 	}
 	::-webkit-scrollbar-thumb {
-		background: #0000ff85;
+		background: #929292;
 		border-radius: 7px;
 	}
 }
