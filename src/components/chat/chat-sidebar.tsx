@@ -19,7 +19,10 @@ interface ChatSidebarProps {
 	sessionId: string | null
 	onSelectSession: (sessionId: string) => void
 	onCreateChat: () => void
-	onDeleteChat: (sessionId: string, event: MouseEvent<HTMLButtonElement>) => void
+	onDeleteChat: (
+		sessionId: string,
+		event: MouseEvent<HTMLButtonElement>,
+	) => void
 	onOpenSettings: () => void
 }
 
@@ -41,17 +44,24 @@ export function ChatSidebar({
 
 	return (
 		<>
-			<div className={`flex items-center justify-between border-b px-3 py-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}>
+			<div
+				className={`flex items-center justify-between border-b px-3 py-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}
+			>
 				<div className='flex items-center gap-2'>
-					<div className={`flex size-9 items-center justify-center rounded-xl ${isDark ? 'bg-white/10' : 'bg-zinc-900/5'}`}>
-						<img src='/images/logo-white.png' alt='SecGPT' className='h-5 w-5' />
+					<div
+						className={`flex size-9 items-center justify-center rounded-xl ${isDark ? 'bg-white/10' : 'bg-zinc-900/5'}`}
+					>
+						<img
+							src='/images/logo-white.png'
+							alt='SecGPT'
+							className='h-5 w-5'
+						/>
 					</div>
 					<div>
-						<p className={`text-xs uppercase tracking-[0.25em] ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-							Workspace
-						</p>
-						<p className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
-							SecGPT Console
+						<p
+							className={`text-xl font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}
+						>
+							SecGPT
 						</p>
 					</div>
 				</div>
@@ -67,7 +77,9 @@ export function ChatSidebar({
 
 			<div className='px-3 pt-3'>
 				<div className='relative'>
-					<Search className={`pointer-events-none absolute left-3 top-2.5 size-4 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`} />
+					<Search
+						className={`pointer-events-none absolute left-3 top-2.5 size-4 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}
+					/>
 					<Input
 						value={sessionQuery}
 						onChange={event => onSessionQueryChange(event.target.value)}
@@ -123,10 +135,14 @@ export function ChatSidebar({
 									>
 										<div className='flex items-center justify-between gap-2'>
 											<div className='min-w-0'>
-												<p className={`truncate text-sm font-medium ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+												<p
+													className={`truncate text-sm font-medium ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}
+												>
 													{item.chat_name?.split('\n')[0] || 'Yangi chat'}
 												</p>
-												<p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+												<p
+													className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}
+												>
 													{item.chat_count} messages
 												</p>
 											</div>
@@ -148,7 +164,9 @@ export function ChatSidebar({
 				</AnimatePresence>
 			</div>
 
-			<div className={`border-t p-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}>
+			<div
+				className={`border-t p-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}
+			>
 				<button
 					type='button'
 					onClick={onOpenSettings}
@@ -158,18 +176,26 @@ export function ChatSidebar({
 							: 'border-zinc-200 bg-white hover:bg-zinc-50'
 					}`}
 				>
-					<div className={`flex size-8 items-center justify-center rounded-lg bg-gradient-to-br ${theme.badge} text-xs font-bold text-slate-900`}>
+					<div
+						className={`flex size-8 items-center justify-center rounded-lg bg-gradient-to-br ${theme.badge} text-xs font-bold text-slate-900`}
+					>
 						{(profile.name || 'G').slice(0, 2).toUpperCase()}
 					</div>
 					<div className='min-w-0'>
-						<p className={`truncate text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+						<p
+							className={`truncate text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}
+						>
 							{profile.name || 'Guest'}
 						</p>
-						<p className={`truncate text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+						<p
+							className={`truncate text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}
+						>
 							{profile.role || 'Security Analyst'}
 						</p>
 					</div>
-					<Settings className={`ml-auto size-4 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`} />
+					<Settings
+						className={`ml-auto size-4 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}
+					/>
 				</button>
 			</div>
 		</>

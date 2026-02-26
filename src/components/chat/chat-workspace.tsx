@@ -176,7 +176,7 @@ export function ChatWorkspace({
 						<p
 							className={`truncate text-xs uppercase tracking-[0.2em] ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}
 						>
-							{mode === 'agent' ? 'Agent workspace' : 'Chat workspace'}
+							{mode === 'agent' ? 'Agent panel' : 'Chat panel'}
 						</p>
 						<p
 							className={`truncate text-sm font-medium md:text-base ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}
