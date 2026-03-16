@@ -38,15 +38,19 @@ import {
 	normalizeSources,
 } from './chat/chat-utils'
 
-const TYPING_INTERVAL_MS = 14
+const TYPING_INTERVAL_MS = 1
 
 export default function ChatApp() {
 	const navigate = useNavigate()
 	const [params, setParams] = useSearchParams()
 	const token = Cookies.get('session_token')
 
-	const [scheme, setScheme] = useState<ColorScheme>(() => loadScheme(SCHEME_KEY))
-	const [profile, setProfile] = useState<Profile>(() => loadProfile(PROFILE_KEY))
+	const [scheme, setScheme] = useState<ColorScheme>(() =>
+		loadScheme(SCHEME_KEY),
+	)
+	const [profile, setProfile] = useState<Profile>(() =>
+		loadProfile(PROFILE_KEY),
+	)
 	const [mode, setMode] = useState<Mode>(profile.defaultMode)
 
 	const [sessions, setSessions] = useState<SessionTypes[]>([])
@@ -100,7 +104,9 @@ export default function ChatApp() {
 	const filteredSessions = useMemo(() => {
 		const query = sessionQuery.trim().toLowerCase()
 		if (!query) return sessions
-		return sessions.filter(item => (item.chat_name || 'chat').toLowerCase().includes(query))
+		return sessions.filter(item =>
+			(item.chat_name || 'chat').toLowerCase().includes(query),
+		)
 	}, [sessions, sessionQuery])
 
 	const activeSession = useMemo(
@@ -124,7 +130,10 @@ export default function ChatApp() {
 		const element = listRef.current
 		if (!element) return
 		element.scrollTo({ top: element.scrollHeight, behavior })
-		lastScrollTopRef.current = Math.max(0, element.scrollHeight - element.clientHeight)
+		lastScrollTopRef.current = Math.max(
+			0,
+			element.scrollHeight - element.clientHeight,
+		)
 		setShowScroll(false)
 		setPinnedTop(false)
 	}, [])
@@ -180,13 +189,16 @@ export default function ChatApp() {
 			clearTyping()
 			setTyping(false)
 			try {
-				const response = await axios.get(`${APISERVICE.sessions}/${id}?limit=100&offset=0`, {
-					headers: {
-						Accept: 'application/json',
-						Authorization: `Bearer ${token}`,
+				const response = await axios.get(
+					`${APISERVICE.sessions}/${id}?limit=100&offset=0`,
+					{
+						headers: {
+							Accept: 'application/json',
+							Authorization: `Bearer ${token}`,
+						},
+						timeout: 15000,
 					},
-					timeout: 15000,
-				})
+				)
 				setMessages(normalizeMessages(response.data))
 				setTimeout(() => scrollBottom('auto'), 40)
 			} catch (error) {
@@ -229,7 +241,11 @@ export default function ChatApp() {
 					if (prev.length === 0) return prev
 					const next = [...prev]
 					const lastIndex = next.length - 1
-					next[lastIndex] = { ...next[lastIndex], role: 'assistant', content: partial }
+					next[lastIndex] = {
+						...next[lastIndex],
+						role: 'assistant',
+						content: partial,
+					}
 					return next
 				})
 				if (cursor >= chars.length) {
@@ -328,16 +344,12 @@ export default function ChatApp() {
 
 		setInput('')
 		setRetryPayload(null)
-		await requestAnswer({ question, selectedMode: mode, appendUserMessage: true })
-	}, [
-		goLogin,
-		input,
-		mode,
-		requestAnswer,
-		sending,
-		token,
-		typing,
-	])
+		await requestAnswer({
+			question,
+			selectedMode: mode,
+			appendUserMessage: true,
+		})
+	}, [goLogin, input, mode, requestAnswer, sending, token, typing])
 
 	const retrySend = useCallback(async () => {
 		if (!retryPayload || sending || typing) return
@@ -361,9 +373,14 @@ export default function ChatApp() {
 			)
 
 			const nextId =
-				typeof response.data?.session_id === 'string' ? response.data.session_id : null
+				typeof response.data?.session_id === 'string'
+					? response.data.session_id
+					: null
 			if (!nextId) {
-				toast.error('Yangi chat yaratilmadi', { position: 'top-center', richColors: true })
+				toast.error('Yangi chat yaratilmadi', {
+					position: 'top-center',
+					richColors: true,
+				})
 				return
 			}
 
@@ -382,7 +399,14 @@ export default function ChatApp() {
 			}
 			showErrorToast(error)
 		}
-	}, [clearTyping, goLogin, loadSessions, profile.defaultMode, setParams, token])
+	}, [
+		clearTyping,
+		goLogin,
+		loadSessions,
+		profile.defaultMode,
+		setParams,
+		token,
+	])
 
 	const deleteChat = useCallback(
 		async (id: string, event: MouseEvent<HTMLButtonElement>) => {
@@ -438,7 +462,8 @@ export default function ChatApp() {
 		const element = listRef.current
 		if (!element) return
 
-		const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+		const distance =
+			element.scrollHeight - element.scrollTop - element.clientHeight
 		const atBottom = distance < 16
 		const currentTop = element.scrollTop
 		const movedUp = currentTop < lastScrollTopRef.current
@@ -505,12 +530,20 @@ export default function ChatApp() {
 	useEffect(() => () => clearTyping(), [clearTyping])
 
 	return (
-		<div className={`relative h-dvh w-screen overflow-hidden ${isDark ? 'bg-[#090f14] text-zinc-100' : 'bg-[#eef2f7] text-zinc-900'}`}>
-			<div className={`pointer-events-none absolute inset-0 ${isDark ? accentBackdrop[profile.accent].dark : accentBackdrop[profile.accent].light}`} />
-			<div className={`pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,rgba(113,113,122,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(113,113,122,0.12)_1px,transparent_1px)] [background-size:40px_40px] ${isDark ? 'opacity-25' : 'opacity-20'}`} />
+		<div
+			className={`relative h-dvh w-screen overflow-hidden ${isDark ? 'bg-[#090f14] text-zinc-100' : 'bg-[#eef2f7] text-zinc-900'}`}
+		>
+			<div
+				className={`pointer-events-none absolute inset-0 ${isDark ? accentBackdrop[profile.accent].dark : accentBackdrop[profile.accent].light}`}
+			/>
+			<div
+				className={`pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,rgba(113,113,122,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(113,113,122,0.12)_1px,transparent_1px)] [background-size:40px_40px] ${isDark ? 'opacity-25' : 'opacity-20'}`}
+			/>
 
 			<div className='relative flex h-full w-full'>
-				<aside className={`hidden h-full w-[300px] shrink-0 overflow-hidden border-r lg:flex lg:flex-col ${isDark ? `bg-[#0c1319]/95 ${theme.ring}` : 'bg-white/90 border-zinc-200/80'}`}>
+				<aside
+					className={`hidden h-full w-[300px] shrink-0 overflow-hidden border-r lg:flex lg:flex-col ${isDark ? `bg-[#0c1319]/95 ${theme.ring}` : 'bg-white/90 border-zinc-200/80'}`}
+				>
 					<ChatSidebar
 						scheme={scheme}
 						theme={theme}
@@ -527,7 +560,9 @@ export default function ChatApp() {
 					/>
 				</aside>
 
-				<Card className={`relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-none border-0 p-0 ${isDark ? 'bg-[#0d141a]/88' : 'bg-white/88'}`}>
+				<Card
+					className={`relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-none border-0 p-0 ${isDark ? 'bg-[#0d141a]/88' : 'bg-white/88'}`}
+				>
 					<ChatWorkspace
 						scheme={scheme}
 						theme={theme}
@@ -579,8 +614,14 @@ export default function ChatApp() {
 							transition={{ type: 'spring', stiffness: 300, damping: 30 }}
 							className={`fixed left-0 top-0 z-50 flex h-full w-[300px] flex-col overflow-hidden border-r backdrop-blur-xl lg:hidden ${isDark ? `bg-[#0c1319]/97 ${theme.ring}` : 'bg-white/97 border-zinc-200/80'}`}
 						>
-							<div className={`flex items-center justify-between border-b px-3 py-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}>
-								<p className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Suhbatlar</p>
+							<div
+								className={`flex items-center justify-between border-b px-3 py-3 ${isDark ? 'border-white/10' : 'border-zinc-200/80'}`}
+							>
+								<p
+									className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}
+								>
+									Suhbatlar
+								</p>
 								<Button
 									type='button'
 									size='icon-sm'
@@ -630,7 +671,9 @@ export default function ChatApp() {
 				sourcePanel={sourcePanel}
 				activeSource={activeSource}
 				onClose={closeSourcePanel}
-				onSelectIndex={index => setSourcePanel(prev => ({ ...prev, activeIndex: index }))}
+				onSelectIndex={index =>
+					setSourcePanel(prev => ({ ...prev, activeIndex: index }))
+				}
 			/>
 		</div>
 	)

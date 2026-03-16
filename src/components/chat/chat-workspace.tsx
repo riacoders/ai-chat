@@ -4,7 +4,9 @@ import {
 	ArrowDown,
 	ArrowUp,
 	BookOpen,
+	Code2,
 	Copy,
+	Folder,
 	Menu,
 	Moon,
 	RotateCcw,
@@ -156,6 +158,66 @@ export function ChatWorkspace({
 			richColors: true,
 		})
 	}
+	const languageLabel = (value?: string) => {
+		switch ((value || '').toLowerCase()) {
+			case 'ts':
+			case 'tsx':
+			case 'typescript':
+				return 'TypeScript'
+			case 'js':
+			case 'jsx':
+			case 'javascript':
+				return 'JavaScript'
+			case 'bash':
+			case 'sh':
+			case 'shell':
+				return 'Shell'
+			case 'py':
+			case 'python':
+				return 'Python'
+			case 'json':
+				return 'JSON'
+			case 'html':
+				return 'HTML'
+			case 'css':
+				return 'CSS'
+			case 'sql':
+				return 'SQL'
+			default:
+				return value ? value.toUpperCase() : 'Code'
+		}
+	}
+	const languageExt = (value?: string) => {
+		switch ((value || '').toLowerCase()) {
+			case 'typescript':
+			case 'ts':
+				return 'ts'
+			case 'tsx':
+				return 'tsx'
+			case 'javascript':
+			case 'js':
+				return 'js'
+			case 'jsx':
+				return 'jsx'
+			case 'python':
+			case 'py':
+				return 'py'
+			case 'shell':
+			case 'bash':
+			case 'sh':
+				return 'sh'
+			default:
+				return value || 'txt'
+		}
+	}
+	const extractCodePath = (meta?: string) => {
+		if (!meta) return ''
+		const pathMatch = meta.match(
+			/(?:title|file|path)\s*=\s*["']([^"']+)["']|([A-Za-z0-9._-]+(?:[\\/][A-Za-z0-9._-]+)+\.[A-Za-z0-9]+)/i,
+		)
+		const raw = pathMatch?.[1] || pathMatch?.[2] || ''
+		return raw.trim()
+	}
 
 	return (
 		<>
@@ -233,10 +295,10 @@ export function ChatWorkspace({
 											initial={{ opacity: 0, y: 12 }}
 											animate={{ opacity: 1, y: 0 }}
 											exit={{ opacity: 0, y: -10 }}
-											className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+											className={`flex min-w-0 ${isUser ? 'justify-end' : 'justify-start'}`}
 										>
 											<div
-												className={`group relative rounded-2xl border px-4 py-3 ${
+												className={`group relative min-w-0 rounded-2xl border px-4 py-3 ${
 													isUser
 														? 'w-fit max-w-[88%] md:max-w-[76%]'
 														: 'w-full max-w-3xl'
@@ -261,16 +323,16 @@ export function ChatWorkspace({
 												</Button>
 
 												{message.role === 'assistant' ? (
-													<div className='space-y-3 pr-8'>
+													<div className='min-w-0 space-y-3 pr-8'>
 														<div
-															className={` text-sm leading-7 ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}
+															className={`text-sm leading-7 break-words [overflow-wrap:anywhere] ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}
 														>
 															<ReactMarkdown
 																components={{
 																	p({ children }) {
 																		return (
 																			<p
-																				className={`mb-3 last:mb-0 ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}
+																				className={`mb-3 last:mb-0 break-words [overflow-wrap:anywhere] ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}
 																			>
 																				{children}
 																			</p>
@@ -304,15 +366,15 @@ export function ChatWorkspace({
 																			<li
 																				className={
 																					isDark
-																						? 'text-zinc-100'
-																						: 'text-zinc-800'
+																						? 'text-zinc-100 break-words [overflow-wrap:anywhere]'
+																						: 'text-zinc-800 break-words [overflow-wrap:anywhere]'
 																				}
 																			>
 																				{children}
 																			</li>
 																		)
 																	},
-																	code({ className, children, ...props }) {
+																	code({ className, children, node, ...props }) {
 																		const content = String(children).replace(
 																			/\n$/,
 																			'',
@@ -320,74 +382,109 @@ export function ChatWorkspace({
 																		const language = /language-(\w+)/
 																			.exec(className || '')?.[1]
 																			?.toLowerCase()
+																		const metaFromNode =
+																			typeof (
+																				(node as { data?: { meta?: unknown } })
+																					?.data?.meta
+																			) === 'string'
+																				? String(
+																						(node as { data?: { meta?: string } })
+																							.data?.meta,
+																					)
+																				: ''
+																		const codePath =
+																			extractCodePath(metaFromNode) ||
+																			`snippet.${languageExt(language)}`
+																		const langTitle = languageLabel(language)
 																		const isBlock =
 																			Boolean(language) ||
 																			content.includes('\n')
 
 																		if (isBlock) {
 																			return (
-																				<div
-																					className={`mt-2 overflow-hidden rounded-lg border ${
-																						isDark
-																							? `${palette.codeBlockBorderDark} bg-[#020817]`
-																							: `${theme.ring} bg-gray-200`
-																					}`}
-																				>
+																				<div className='mt-3'>
 																					<div
-																						className={`flex items-center justify-between border-b px-2.5 text-[10px] ${
+																						className={`mb-2 inline-flex max-w-full items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] ${
 																							isDark
-																								? `border-white/10 ${palette.codeHeaderDark}`
-																								: 'border-white/10 bg-slate-300 text-slate-900'
+																								? 'border-white/10 bg-white/5 text-zinc-200'
+																								: 'border-zinc-300 bg-zinc-200/80 text-zinc-700'
 																						}`}
 																					>
-																						<span className='font-medium tracking-wider'>
-																							{(
-																								language || 'code'
-																							).toUpperCase()}
+																						<Folder className='size-3.5 shrink-0 text-amber-300' />
+																						<span className='truncate font-mono'>
+																							{codePath}
 																						</span>
-																						<button
-																							type='button'
-																							onClick={() =>
-																								copyText(
-																									content,
-																									'Kod nusxalandi',
-																								)
-																							}
-																							className='inline-flex items-center gap-1 rounded-md px-1.5 transition hover:bg-white/10'
-																						>
-																							<Copy className='size-3' />
-																							<span className='hidden sm:inline'>
-																								Copy
-																							</span>
-																						</button>
 																					</div>
-																					<SyntaxHighlighter
-																						language={language || 'text'}
-																						style={codeTheme}
-																						PreTag='div'
-																						customStyle={{
-																							margin: 0,
-																							padding: '0.5rem 0.625rem',
-																							background: 'transparent',
-																							fontSize: '12px',
-																							lineHeight: '1.45',
-																						}}
-																						codeTagProps={{
-																							style: {
-																								fontFamily:
-																									'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace',
-																							},
-																						}}
+																					<div
+																						className={`overflow-hidden rounded-[24px] border ${
+																							isDark
+																								? 'border-white/10 bg-gradient-to-b from-[#111827] to-[#0b1118]'
+																								: 'border-zinc-300 bg-gradient-to-b from-[#1f2430] to-[#131722]'
+																						}`}
 																					>
-																						{content}
-																					</SyntaxHighlighter>
+																						<div className='flex items-center justify-between px-4 pb-1 pt-3'>
+																							<div className='inline-flex items-center gap-2'>
+																								<Code2
+																									className={`size-4 ${
+																										isDark
+																											? 'text-zinc-100'
+																											: 'text-zinc-200'
+																									}`}
+																								/>
+																								<span
+																									className={`text-sm font-semibold ${
+																										isDark
+																											? 'text-zinc-100'
+																											: 'text-zinc-100'
+																									}`}
+																								>
+																									{langTitle}
+																								</span>
+																							</div>
+																							<button
+																								type='button'
+																								onClick={() =>
+																									copyText(
+																										content,
+																										'Kod nusxalandi',
+																									)
+																								}
+																								className='rounded-md p-1.5 text-zinc-300 transition hover:bg-white/10 hover:text-zinc-100'
+																								aria-label='Copy code'
+																								title='Copy code'
+																							>
+																								<Copy className='size-4' />
+																							</button>
+																						</div>
+																						<SyntaxHighlighter
+																							language={language || 'text'}
+																							style={codeTheme}
+																							PreTag='div'
+																							wrapLongLines
+																							customStyle={{
+																								margin: 0,
+																								padding: '0.125rem 1rem 1rem',
+																								background: 'transparent',
+																								fontSize: '13px',
+																								lineHeight: '1.6',
+																							}}
+																							codeTagProps={{
+																								style: {
+																									fontFamily:
+																										'ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace',
+																								},
+																							}}
+																						>
+																							{content}
+																						</SyntaxHighlighter>
+																					</div>
 																				</div>
 																			)
 																		}
 
 																		return (
 																			<code
-																				className={`rounded px-1.5 py-0.5 font-mono text-[12px] ${
+																				className={`rounded px-1.5 py-0.5 font-mono text-[12px] break-words [overflow-wrap:anywhere] ${
 																					isDark
 																						? palette.codeInlineDark
 																						: `${theme.soft} text-slate-800`
@@ -461,7 +558,7 @@ export function ChatWorkspace({
 															)}
 													</div>
 												) : (
-													<p className='pr-8 text-sm leading-relaxed whitespace-pre-wrap break-words text-inherit'>
+													<p className='pr-8 text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-inherit'>
 														{message.content}
 													</p>
 												)}
