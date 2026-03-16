@@ -39,6 +39,34 @@ import {
 } from './chat/chat-utils'
 
 const TYPING_INTERVAL_MS = 1
+const STREAM_TIMEOUT_MS = 600_000
+const EMPTY_ANSWER_FALLBACK = 'Javob qaytmadi. Qayta urinib koring.'
+
+const extractFetchErrorMessage = (payload: unknown, status: number): string => {
+	const fallback = `So'rov bajarilmadi (${status})`
+	if (!payload || typeof payload !== 'object') return fallback
+
+	const data = payload as Record<string, unknown>
+	if (typeof data.message === 'string' && data.message.trim()) {
+		return data.message
+	}
+	if (typeof data.detail === 'string' && data.detail.trim()) {
+		return data.detail
+	}
+	if (Array.isArray(data.detail) && data.detail.length > 0) {
+		const first = data.detail[0]
+		if (first && typeof first === 'object') {
+			const row = first as Record<string, unknown>
+			if (typeof row.msg === 'string' && row.msg.trim()) {
+				return row.msg
+			}
+		}
+		if (typeof first === 'string' && first.trim()) {
+			return first
+		}
+	}
+	return fallback
+}
 
 export default function ChatApp() {
 	const navigate = useNavigate()
@@ -166,7 +194,7 @@ export default function ChatApp() {
 		if (!token) return
 		setLoadingSessions(true)
 		try {
-			const response = await axios.get(APISERVICE.sessions, {
+			const response = await axios.get(`${APISERVICE.sessions}/`, {
 				headers: { Authorization: `Bearer ${token}` },
 				timeout: 15000,
 			})
@@ -206,6 +234,10 @@ export default function ChatApp() {
 					goLogin()
 					return
 				}
+				if (axios.isAxiosError(error) && error.response?.status === 404) {
+					setMessages([])
+					return
+				}
 				showErrorToast(error)
 			} finally {
 				setLoadingMessages(false)
@@ -216,7 +248,7 @@ export default function ChatApp() {
 
 	const animateAnswer = useCallback(
 		(answer: string, sources: SourceItem[] = [], category?: string) => {
-			const text = answer.trim() || 'Javob qaytmadi. Qayta urinib koring.'
+			const text = answer.trim() || EMPTY_ANSWER_FALLBACK
 			const createdAt = Date.now()
 
 			setMessages(prev => [
@@ -284,41 +316,263 @@ export default function ChatApp() {
 			try {
 				const payload: Record<string, string> = { question, mode: selectedMode }
 				if (sessionId) payload.session_id = sessionId
+				const controller = new AbortController()
+				const timeoutId = window.setTimeout(
+					() => controller.abort(),
+					STREAM_TIMEOUT_MS,
+				)
 
-				const response = await axios.post(APISERVICE.chat, payload, {
-					headers: { Authorization: `Bearer ${token}` },
-					timeout: 60000,
-				})
+				try {
+					const response = await fetch(APISERVICE.chat, {
+						method: 'POST',
+						headers: {
+							Authorization: `Bearer ${token}`,
+							Accept: 'text/event-stream, application/json',
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(payload),
+						signal: controller.signal,
+					})
 
-				const nextId =
-					typeof response.data?.session_id === 'string'
-						? response.data.session_id
-						: sessionId
-				if (nextId && nextId !== sessionId) setParams({ c: nextId })
+					if (response.status === 401) {
+						goLogin()
+						return
+					}
 
-				const answerText =
-					typeof response.data?.answer === 'string' ? response.data.answer : ''
-				const sources = normalizeSources(response.data?.sources)
-				const category =
-					typeof response.data?.category === 'string'
-						? response.data.category
-						: undefined
-				animateAnswer(answerText, sources, category)
+					if (!response.ok) {
+						let errorPayload: unknown = null
+						try {
+							errorPayload = await response.json()
+						} catch {
+							errorPayload = null
+						}
+						const nextError = new Error(
+							extractFetchErrorMessage(errorPayload, response.status),
+						) as Error & { status?: number }
+						nextError.status = response.status
+						throw nextError
+					}
+
+					const contentType = response.headers.get('content-type') || ''
+					const isStream = contentType.includes('text/event-stream')
+
+					if (isStream) {
+						const reader = response.body?.getReader()
+						if (!reader) {
+							const nextError = new Error(
+								'Stream oqimini o`qib bo`lmadi',
+							) as Error & { status?: number }
+							nextError.status = 502
+							throw nextError
+						}
+
+						const createdAt = Date.now()
+						let buffer = ''
+						let answerText = ''
+						let streamDone = false
+						let nextId = sessionId
+						let streamSources: SourceItem[] = []
+						let streamCategory: string | undefined
+						const decoder = new TextDecoder()
+
+						setMessages(prev => [
+							...prev,
+							{
+								role: 'assistant',
+								content: '',
+								created_at: createdAt,
+								sources: [],
+							},
+						])
+
+						const syncAssistantMessage = () => {
+							setMessages(prev => {
+								if (prev.length === 0) return prev
+								const next = [...prev]
+								const lastIndex = next.length - 1
+								const text = answerText.trim() || EMPTY_ANSWER_FALLBACK
+								if (next[lastIndex].role !== 'assistant') {
+									next.push({
+										role: 'assistant',
+										content: text,
+										created_at: createdAt,
+										sources: streamSources,
+										category: streamCategory,
+									})
+									return next
+								}
+
+								next[lastIndex] = {
+									...next[lastIndex],
+									role: 'assistant',
+									content: text,
+									sources: streamSources,
+									category: streamCategory,
+								}
+								return next
+							})
+						}
+
+						const processEventBlock = (block: string) => {
+							if (!block.trim()) return
+
+							const dataValue = block
+								.split('\n')
+								.filter(line => line.startsWith('data:'))
+								.map(line => line.slice(5).trimStart())
+								.join('\n')
+								.trim()
+
+							if (!dataValue) return
+							if (dataValue === '[DONE]') {
+								streamDone = true
+								return
+							}
+
+							let parsedPayload: unknown = null
+							try {
+								parsedPayload = JSON.parse(dataValue)
+							} catch {
+								return
+							}
+							if (!parsedPayload || typeof parsedPayload !== 'object') return
+
+							const streamPayload = parsedPayload as Record<string, unknown>
+							if (typeof streamPayload.delta === 'string') {
+								answerText += streamPayload.delta
+							}
+							if (typeof streamPayload.answer === 'string') {
+								answerText = streamPayload.answer
+							}
+							if ('sources' in streamPayload) {
+								const parsedSources = normalizeSources(streamPayload.sources)
+								if (parsedSources.length > 0) streamSources = parsedSources
+							}
+							if (
+								typeof streamPayload.category === 'string' &&
+								streamPayload.category.trim()
+							) {
+								streamCategory = streamPayload.category
+							}
+							if (
+								typeof streamPayload.session_id === 'string' &&
+								streamPayload.session_id.trim()
+							) {
+								nextId = streamPayload.session_id
+							}
+							if (streamPayload.done === true) {
+								streamDone = true
+							}
+
+							if (
+								typeof streamPayload.delta === 'string' ||
+								typeof streamPayload.answer === 'string' ||
+								streamPayload.done === true ||
+								'sources' in streamPayload ||
+								typeof streamPayload.category === 'string'
+							) {
+								syncAssistantMessage()
+							}
+						}
+
+						while (true) {
+							const { value, done } = await reader.read()
+							if (done) break
+
+							buffer += decoder.decode(value, { stream: true })
+							buffer = buffer.replace(/\r\n/g, '\n')
+							let splitIndex = buffer.indexOf('\n\n')
+
+							while (splitIndex >= 0) {
+								const block = buffer.slice(0, splitIndex)
+								processEventBlock(block)
+								buffer = buffer.slice(splitIndex + 2)
+								splitIndex = buffer.indexOf('\n\n')
+							}
+						}
+
+						buffer += decoder.decode()
+						buffer = buffer.replace(/\r\n/g, '\n')
+						if (buffer.trim()) processEventBlock(buffer)
+
+						if (!answerText.trim() || !streamDone) {
+							syncAssistantMessage()
+						}
+						if (nextId && nextId !== sessionId) {
+							setParams({ c: nextId })
+						}
+						setTyping(false)
+					} else {
+						const data = (await response.json()) as Record<string, unknown>
+						const nextId =
+							typeof data.session_id === 'string' ? data.session_id : sessionId
+						if (nextId && nextId !== sessionId) {
+							setParams({ c: nextId })
+						}
+
+						const answerText =
+							typeof data.answer === 'string' ? data.answer : ''
+						const sources = normalizeSources(data.sources)
+						const category =
+							typeof data.category === 'string' ? data.category : undefined
+						animateAnswer(answerText, sources, category)
+					}
+				} finally {
+					window.clearTimeout(timeoutId)
+				}
+
 				setRetryPayload(null)
 				void loadSessions()
 			} catch (error) {
 				clearTyping()
 				setTyping(false)
-				if (axios.isAxiosError(error) && error.response?.status === 401) {
+				const status = (() => {
+					if (axios.isAxiosError(error)) return error.response?.status ?? 0
+					if (
+						error &&
+						typeof error === 'object' &&
+						'status' in error &&
+						typeof (error as { status?: unknown }).status === 'number'
+					) {
+						return (error as { status: number }).status
+					}
+					return 0
+				})()
+
+				if (status === 401) {
 					goLogin()
 					return
 				}
-				if (axios.isAxiosError(error) && (error.response?.status ?? 0) >= 500) {
+				if (
+					status >= 500 ||
+					(error instanceof DOMException && error.name === 'AbortError')
+				) {
 					setRetryPayload({ question, mode: selectedMode })
 				} else {
 					setRetryPayload(null)
 				}
-				showErrorToast(error)
+
+				if (axios.isAxiosError(error)) {
+					showErrorToast(error)
+				} else if (
+					error instanceof DOMException &&
+					error.name === 'AbortError'
+				) {
+					toast.error('Server javobi kechikdi. Qayta urinib koring.', {
+						position: 'top-center',
+						richColors: true,
+					})
+				} else if (error instanceof Error) {
+					toast.error(error.message, {
+						position: 'top-center',
+						richColors: true,
+					})
+				} else {
+					toast.error("Noma'lum xatolik", {
+						position: 'top-center',
+						richColors: true,
+					})
+				}
 			} finally {
 				setSending(false)
 			}
