@@ -7,14 +7,14 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
 }
 
-export function showErrorToast(error: any) {
+export function showErrorToast(error: unknown) {
 	const toStr = (e: unknown): string => {
 		if (e === null || e === undefined) return "Noma'lum xatolik"
 		if (typeof e === 'string') return e
 		if (typeof e === 'number' || typeof e === 'boolean') return e.toString()
 		if (Array.isArray(e)) return e.map(toStr).join(', ')
 		if (typeof e === 'object') {
-			const errObj = e as Record<string, any>
+			const errObj = e as Record<string, unknown>
 			if ('message' in errObj && typeof errObj.message === 'string')
 				return errObj.message
 			return JSON.stringify(errObj)
@@ -33,8 +33,9 @@ export function showErrorToast(error: any) {
 		}
 
 		if (typeof errors === 'object' && errors !== null) {
-			for (const key in errors) {
-				const item = errors[key]
+			const errorMap = errors as Record<string, unknown>
+			for (const key in errorMap) {
+				const item = errorMap[key]
 				if (Array.isArray(item)) {
 					item.forEach(msg =>
 						toast.error(toStr(msg), {
