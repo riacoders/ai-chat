@@ -1,10 +1,11 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import DOMPurify from "dompurify"
 import {
   Bot,
   Copy,
+  GripVertical,
   Loader2,
   Menu,
   MessageSquare,
@@ -69,6 +70,81 @@ function formatDate(value: number) {
   })
 }
 
+const COMMAND_KEY_PATTERN =
+  /(command|cmd|shell|bash|zsh|sh|powershell|pwsh|terminal|exec|tool_input|tool_args|arguments)/i
+const COMMAND_LINE_PATTERN =
+  /^(?:\$?\s*(?:sudo\s+)?(?:nmap|subfinder|nuclei|ffuf|whois|curl|wget|ping|traceroute|dig|nslookup|python(?:3)?|pip|npm|pnpm|yarn|node|git|docker|kubectl|ssh|scp|bash|sh|pwsh|powershell)\b|(?:\.{0,2}\/|~\/)[^\s]+|\w+:\S+)/
+
+function normalizeCommandLine(line: string) {
+  return line
+    .trim()
+    .replace(/^[-*]\s+/, "")
+    .replace(/^\d+\.\s+/, "")
+    .replace(/^[$>#]\s*/, "")
+    .trim()
+}
+
+function extractCommandsFromText(text: string) {
+  return text
+    .replace(/```(?:bash|shell|sh|zsh|console|powershell|pwsh)?/gi, "")
+    .replace(/```/g, "")
+    .split(/\r?\n/)
+    .map(normalizeCommandLine)
+    .filter((line) => line.length > 2 && line.length <= 280)
+    .filter(
+      (line) =>
+        COMMAND_LINE_PATTERN.test(line) ||
+        line.startsWith("$ ") ||
+        /(?:\s--\w|\s&&\s|\s\|\s|>\s|\s<\s)/.test(line)
+    )
+}
+
+function extractCommandsFromAnswer(answer: string) {
+  const commands: string[] = []
+  const fencePattern =
+    /```(?:bash|shell|sh|zsh|console|powershell|pwsh)?\n([\s\S]*?)```/gi
+  let match: RegExpExecArray | null = fencePattern.exec(answer)
+
+  while (match) {
+    commands.push(...extractCommandsFromText(match[1] || ""))
+    match = fencePattern.exec(answer)
+  }
+
+  return commands
+}
+
+function extractCommandsFromEventPayload(event: unknown) {
+  const commands: string[] = []
+
+  const visit = (node: unknown) => {
+    if (!node || typeof node !== "object") return
+
+    if (Array.isArray(node)) {
+      node.forEach(visit)
+      return
+    }
+
+    Object.entries(node as Record<string, unknown>).forEach(([key, value]) => {
+      const lowerKey = key.toLowerCase()
+      if (["status", "state", "progress", "done"].includes(lowerKey)) {
+        return
+      }
+
+      if (typeof value === "string") {
+        if (COMMAND_KEY_PATTERN.test(key)) {
+          commands.push(...extractCommandsFromText(value))
+        }
+        return
+      }
+
+      visit(value)
+    })
+  }
+
+  visit(event)
+  return commands
+}
+
 export function NextChatApp() {
   const router = useRouter()
 
@@ -82,14 +158,13 @@ export function NextChatApp() {
   const [sending, setSending] = React.useState(false)
   const [loadingSessions, setLoadingSessions] = React.useState(false)
   const [loadingMessages, setLoadingMessages] = React.useState(false)
-  const [terminalLogs, setTerminalLogs] = React.useState<string[]>([
-    "SecGPT terminal tayyor.",
-  ])
+  const [terminalLogs, setTerminalLogs] = React.useState<string[]>([])
   const [agentSplit, setAgentSplit] = React.useState(62)
   const [resizing, setResizing] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-
-  const token = getSessionToken()
+  const [hydrated, setHydrated] = React.useState(false)
+  const [token, setToken] = React.useState<string | null>(null)
+  const seenCommandsRef = React.useRef<Set<string>>(new Set())
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
   const splitRootRef = React.useRef<HTMLDivElement | null>(null)
   const terminalEndRef = React.useRef<HTMLDivElement | null>(null)
@@ -124,15 +199,28 @@ export function NextChatApp() {
     return []
   }, [messages])
 
-  const appendTerminal = React.useCallback((text: string) => {
+  const pushTerminalCommands = React.useCallback((items: string[]) => {
+    if (items.length === 0) return
+
     setTerminalLogs((prev) => {
-      const next = [...prev, `${new Date().toLocaleTimeString("uz-UZ")} | ${text}`]
+      const next = [...prev]
+
+      items.forEach((raw) => {
+        const normalized = normalizeCommandLine(raw)
+        if (!normalized) return
+        if (seenCommandsRef.current.has(normalized)) return
+
+        seenCommandsRef.current.add(normalized)
+        next.push(normalized)
+      })
+
       return next.slice(-300)
     })
   }, [])
 
   const goLogin = React.useCallback(() => {
     clearSessionToken()
+    setToken(null)
     router.replace("/login")
   }, [router])
 
@@ -146,6 +234,11 @@ export function NextChatApp() {
     },
     [goLogin]
   )
+
+  React.useEffect(() => {
+    setHydrated(true)
+    setToken(getSessionToken())
+  }, [])
 
   const loadSessions = React.useCallback(async () => {
     const nextToken = getSessionToken()
@@ -215,7 +308,6 @@ export function NextChatApp() {
       setSessionId(created.session_id)
       setMessages([])
       setSidebarOpen(false)
-      appendTerminal("Yangi session yaratildi.")
       await loadSessions()
     } catch (createError) {
       if (checkUnauthorized(createError)) return
@@ -223,7 +315,7 @@ export function NextChatApp() {
         createError instanceof Error ? createError.message : "Session yaratilmadi."
       toast.error(message, { richColors: true, position: "top-center" })
     }
-  }, [appendTerminal, checkUnauthorized, goLogin, loadSessions])
+  }, [checkUnauthorized, goLogin, loadSessions])
 
   const removeSession = React.useCallback(
     async (id: string) => {
@@ -240,8 +332,6 @@ export function NextChatApp() {
           setSessionId(null)
           setMessages([])
         }
-
-        appendTerminal(`Session o'chirildi: ${id}`)
         await loadSessions()
       } catch (removeError) {
         if (checkUnauthorized(removeError)) return
@@ -252,7 +342,7 @@ export function NextChatApp() {
         toast.error(message, { richColors: true, position: "top-center" })
       }
     },
-    [appendTerminal, checkUnauthorized, goLogin, loadSessions, sessionId]
+    [checkUnauthorized, goLogin, loadSessions, sessionId]
   )
 
   const sendPrompt = React.useCallback(async () => {
@@ -294,19 +384,13 @@ export function NextChatApp() {
       },
     ])
 
-    appendTerminal(`So'rov yuborildi (${mode})`)
-
     try {
       let currentSessionId = sessionId
       if (!currentSessionId) {
         const created = await api.newSession(nextToken)
         currentSessionId = created.session_id
         setSessionId(created.session_id)
-        appendTerminal("Session avtomatik yaratildi.")
       }
-
-      let chunkCount = 0
-      let doneLogged = false
 
       const streamed = await streamChatRequest(
         nextToken,
@@ -331,27 +415,16 @@ export function NextChatApp() {
               )
             )
 
-            if (
-              event &&
-              typeof event === "object" &&
-              "delta" in event &&
-              typeof (event as Record<string, unknown>).delta === "string"
-            ) {
-              chunkCount += 1
-              if (chunkCount % 24 === 0) {
-                appendTerminal(`Stream chunk: ${chunkCount}`)
+            if (mode === "agent") {
+              const commandsFromEvent = extractCommandsFromEventPayload(event)
+              if (commandsFromEvent.length > 0) {
+                pushTerminalCommands(commandsFromEvent)
               }
-            }
 
-            if (
-              !doneLogged &&
-              event &&
-              typeof event === "object" &&
-              "done" in event &&
-              (event as { done?: boolean }).done
-            ) {
-              doneLogged = true
-              appendTerminal("Stream yakunlandi.")
+              const commandsFromAnswer = extractCommandsFromAnswer(snapshot.answer)
+              if (commandsFromAnswer.length > 0) {
+                pushTerminalCommands(commandsFromAnswer)
+              }
             }
           },
         }
@@ -377,9 +450,9 @@ export function NextChatApp() {
         setSessionId(streamed.snapshot.session_id)
       }
 
-      appendTerminal(
-        `Javob olindi: ${finalAnswer.length} belgi, manba: ${finalSources.length}`
-      )
+      if (mode === "agent") {
+        pushTerminalCommands(extractCommandsFromAnswer(finalAnswer))
+      }
       await loadSessions()
     } catch (sendError) {
       if (checkUnauthorized(sendError)) return
@@ -391,22 +464,23 @@ export function NextChatApp() {
           item.id === assistantId ? { ...item, content: `Xatolik: ${message}` } : item
         )
       )
-
-      appendTerminal(`Xatolik: ${message}`)
       setError(message)
       toast.error(message, { richColors: true, position: "top-center" })
     } finally {
       setSending(false)
     }
-  }, [appendTerminal, checkUnauthorized, goLogin, loadSessions, mode, prompt, sending, sessionId])
+  }, [checkUnauthorized, goLogin, loadSessions, mode, prompt, pushTerminalCommands, sending, sessionId])
 
   React.useEffect(() => {
+    if (!hydrated) {
+      return
+    }
     if (!token) {
       router.replace("/login")
       return
     }
     void loadSessions()
-  }, [loadSessions, router, token])
+  }, [hydrated, loadSessions, router, token])
 
   React.useEffect(() => {
     if (!sessionId && sessions.length > 0) {
@@ -456,6 +530,10 @@ export function NextChatApp() {
       document.body.style.userSelect = ""
     }
   }, [resizing])
+
+  if (!hydrated) {
+    return <div className="chat-shell h-dvh w-full" />
+  }
 
   if (!token) {
     return null
@@ -760,18 +838,14 @@ export function NextChatApp() {
 
           <div className="min-h-0 flex-1 p-3">
             {mode === "ask" ? (
-              <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
-                {chatPanel}
-                <div className="panel-card min-h-0 rounded-2xl">
-                  <div className="border-b border-white/10 px-4 py-3 text-sm text-slate-200">Resources</div>
-                  <ScrollArea className="h-[calc(100%-45px)]">
-                    <div className="space-y-2 p-3">
-                      {askResources.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-white/10 p-4 text-xs text-slate-400">
-                          {"Manba yo'q"}
-                        </div>
-                      ) : (
-                        askResources.map((source, index) => (
+              askResources.length > 0 ? (
+                <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+                  {chatPanel}
+                  <div className="panel-card sources-panel min-h-0 rounded-2xl">
+                    <div className="border-b border-white/10 px-4 py-3 text-sm text-slate-200">Resources</div>
+                    <ScrollArea className="h-[calc(100%-45px)]">
+                      <div className="space-y-2 p-3">
+                        {askResources.map((source, index) => (
                           <a
                             key={`${source.url}-${index}`}
                             href={source.url}
@@ -785,12 +859,14 @@ export function NextChatApp() {
                               <p className="mt-2 line-clamp-3 text-xs text-slate-300">{source.snippet}</p>
                             ) : null}
                           </a>
-                        ))
-                      )}
-                    </div>
-                  </ScrollArea>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="h-full min-h-0">{chatPanel}</div>
+              )
             ) : (
               <>
                 <div ref={splitRootRef} className="hidden h-full min-h-0 w-full lg:flex">
@@ -803,10 +879,14 @@ export function NextChatApp() {
                     aria-label="Resize panels"
                     onMouseDown={() => setResizing(true)}
                     className={cn(
-                      "mx-2 my-2 w-1 rounded-full transition",
-                      resizing ? "bg-cyan-400/70" : "bg-white/15 hover:bg-cyan-400/60"
+                      "splitter-handle mx-1 my-2 w-3 cursor-col-resize rounded-full transition",
+                      resizing
+                        ? "bg-cyan-400/25 ring-1 ring-cyan-300/50"
+                        : "bg-white/8 hover:bg-cyan-400/18"
                     )}
-                  />
+                  >
+                    <GripVertical className="size-3.5 text-slate-300/75" />
+                  </button>
 
                   <div className="min-h-0 flex-1">
                     <div className="panel-card flex h-full min-h-0 flex-col rounded-2xl">
@@ -819,7 +899,10 @@ export function NextChatApp() {
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => setTerminalLogs(["Terminal tozalandi."])}
+                          onClick={() => {
+                            seenCommandsRef.current.clear()
+                            setTerminalLogs([])
+                          }}
                           className="h-7 rounded-md border border-white/10 bg-white/[0.03] px-2 text-xs"
                         >
                           Tozalash
@@ -828,11 +911,17 @@ export function NextChatApp() {
 
                       <ScrollArea className="min-h-0 flex-1 p-3">
                         <div className="space-y-1 font-mono text-xs text-slate-300">
-                          {terminalLogs.map((line, index) => (
-                            <div key={`${line}-${index}`} className="terminal-line">
-                              {line}
+                          {terminalLogs.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] p-3 text-[11px] text-slate-500">
+                              Agent commandlari shu yerda chiqadi.
                             </div>
-                          ))}
+                          ) : (
+                            terminalLogs.map((line, index) => (
+                              <div key={`${line}-${index}`} className="terminal-line">
+                                {line}
+                              </div>
+                            ))
+                          )}
                           <div ref={terminalEndRef} />
                         </div>
                       </ScrollArea>
@@ -845,11 +934,17 @@ export function NextChatApp() {
                     <div className="border-b border-white/10 px-4 py-3 text-sm text-slate-200">Terminal</div>
                     <ScrollArea className="h-[calc(100%-45px)] p-3">
                       <div className="space-y-1 font-mono text-xs text-slate-300">
-                        {terminalLogs.map((line, index) => (
-                          <div key={`${line}-${index}`} className="terminal-line">
-                            {line}
+                        {terminalLogs.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.02] p-3 text-[11px] text-slate-500">
+                            Agent commandlari shu yerda chiqadi.
                           </div>
-                        ))}
+                        ) : (
+                          terminalLogs.map((line, index) => (
+                            <div key={`${line}-${index}`} className="terminal-line">
+                              {line}
+                            </div>
+                          ))
+                        )}
                       </div>
                     </ScrollArea>
                   </div>
@@ -924,3 +1019,4 @@ export function NextChatApp() {
     </div>
   )
 }
+

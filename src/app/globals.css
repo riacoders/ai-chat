@@ -85,6 +85,27 @@ body {
   backdrop-filter: blur(12px);
 }
 
+.sources-panel {
+  animation: sources-slide-in 180ms ease-out;
+}
+
+@keyframes sources-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.splitter-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .markdown-shell pre {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
