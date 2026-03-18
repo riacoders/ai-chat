@@ -131,6 +131,11 @@ body {
   padding-left: 0.55rem;
 }
 
+.terminal-entry {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+}
+
 .auth-shell {
   display: grid;
   min-height: 100dvh;
