@@ -85,6 +85,27 @@ body {
   backdrop-filter: blur(12px);
 }
 
+.sources-panel {
+  animation: sources-slide-in 180ms ease-out;
+}
+
+@keyframes sources-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.splitter-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .markdown-shell pre {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
@@ -108,6 +129,11 @@ body {
 .terminal-line {
   border-left: 1px solid rgba(56, 189, 248, 0.18);
   padding-left: 0.55rem;
+}
+
+.terminal-entry {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
 }
 
 .auth-shell {
