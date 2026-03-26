@@ -52,10 +52,7 @@ export class ApiError extends Error {
   }
 }
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  process.env.NEXT_PUBLIC_VITE_APP_BASE_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000"
+export const API_BASE_URL = "/api"
 
 function parseErrorMessage(payload: unknown, status: number) {
   if (typeof payload === "string" && payload.trim()) {

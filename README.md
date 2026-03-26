@@ -23,8 +23,10 @@ npm run start
 Use `.env` (or `.env.local`) with:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8000
 ```
+
+Frontend requests are sent to `/api/*` and proxied by Next.js server route to `API_BASE_URL`.
 
 ## Pages
 
