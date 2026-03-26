@@ -9,11 +9,13 @@ import {
 	Loader2,
 	Menu,
 	MessageSquare,
+	Paperclip,
 	Plus,
 	Search,
 	Send,
 	TerminalSquare,
 	Trash2,
+	X,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
@@ -562,6 +564,7 @@ export function NextChatApp() {
 	const [sessionId, setSessionId] = React.useState<string | null>(null)
 	const [messages, setMessages] = React.useState<UiMessage[]>([])
 	const [prompt, setPrompt] = React.useState('')
+	const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
 	const [mode, setMode] = React.useState<ChatMode>('ask')
 	const [sidebarOpen, setSidebarOpen] = React.useState(false)
 	const [sending, setSending] = React.useState(false)
@@ -576,9 +579,24 @@ export function NextChatApp() {
 	const [hydrated, setHydrated] = React.useState(false)
 	const [token, setToken] = React.useState<string | null>(null)
 	const activeSessionRef = React.useRef<string | null>(null)
+	const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 	const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
 	const splitRootRef = React.useRef<HTMLDivElement | null>(null)
 	const terminalEndRef = React.useRef<HTMLDivElement | null>(null)
+
+	const clearSelectedFile = React.useCallback(() => {
+		setSelectedFile(null)
+		if (fileInputRef.current) {
+			fileInputRef.current.value = ''
+		}
+	}, [])
+
+	const handleFileChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLInputElement>) => {
+			setSelectedFile(event.target.files?.[0] ?? null)
+		},
+		[],
+	)
 
 	const copyText = React.useCallback(
 		(value: string, label = 'Nusxa olindi.') => {
@@ -791,20 +809,32 @@ export function NextChatApp() {
 			return
 		}
 
-		if (sending || prompt.trim().length === 0) {
+		const trimmedPrompt = prompt.trim()
+		if (sending || (trimmedPrompt.length === 0 && !selectedFile)) {
 			return
 		}
 
 		setError(null)
 		setSending(true)
 
-		const cleanPrompt = DOMPurify.sanitize(prompt.trim(), { ALLOWED_TAGS: [] })
+		const fileToSend = selectedFile
+		const cleanPrompt = DOMPurify.sanitize(trimmedPrompt, { ALLOWED_TAGS: [] })
+		const userContent =
+			cleanPrompt.length > 0
+				? fileToSend
+					? `${cleanPrompt}\n\n[File: ${fileToSend.name}]`
+					: cleanPrompt
+				: fileToSend
+					? `[File: ${fileToSend.name}]`
+					: ''
+
 		setPrompt('')
+		clearSelectedFile()
 
 		const userMessage: UiMessage = {
 			id: `user-${Date.now()}`,
 			role: 'user',
-			content: cleanPrompt,
+			content: userContent,
 			createdAt: Date.now(),
 			sources: [],
 		}
@@ -844,6 +874,7 @@ export function NextChatApp() {
 					session_id: currentSessionId,
 					mode,
 					top_k: 5,
+					file: fileToSend,
 				},
 				{
 					onUpdate: (snapshot, event) => {
@@ -926,11 +957,13 @@ export function NextChatApp() {
 		}
 	}, [
 		checkUnauthorized,
+		clearSelectedFile,
 		goLogin,
 		loadSessions,
 		mode,
 		prompt,
 		pushTerminalEntry,
+		selectedFile,
 		sending,
 		sessionId,
 	])
@@ -1185,6 +1218,42 @@ export function NextChatApp() {
 				void sendPrompt()
 			}}
 		>
+			<div className='mb-2 flex items-center gap-2'>
+				<input
+					ref={fileInputRef}
+					type='file'
+					onChange={handleFileChange}
+					className='hidden'
+				/>
+				<Button
+					type='button'
+					size='sm'
+					variant='ghost'
+					onClick={() => fileInputRef.current?.click()}
+					className='h-8 gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-slate-200 hover:bg-white/[0.08]'
+				>
+					<Paperclip className='size-3.5' />
+					Fayl
+				</Button>
+				{selectedFile ? (
+					<div className='flex min-w-0 items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-100'>
+						<span className='truncate'>{selectedFile.name}</span>
+						<button
+							type='button'
+							onClick={clearSelectedFile}
+							className='rounded p-0.5 text-cyan-100/80 transition hover:bg-white/10 hover:text-cyan-50'
+							aria-label='Faylni olib tashlash'
+						>
+							<X className='size-3.5' />
+						</button>
+					</div>
+				) : (
+					<span className='text-[11px] text-slate-400'>
+						Ixtiyoriy: fayl yuklab yuborish mumkin
+					</span>
+				)}
+			</div>
+
 			<Textarea
 				value={prompt}
 				onChange={event => setPrompt(event.target.value)}
@@ -1232,7 +1301,7 @@ export function NextChatApp() {
 
 				<Button
 					type='submit'
-					disabled={sending || prompt.trim().length === 0}
+					disabled={sending || (prompt.trim().length === 0 && !selectedFile)}
 					className='h-9 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-3 text-white'
 				>
 					{sending ? (
@@ -1338,6 +1407,9 @@ export function NextChatApp() {
 							)}
 						</div>
 					</ScrollArea>
+					<div>
+						
+					</div>
 				</aside>
 
 				<div className='flex min-w-0 flex-1 flex-col'>

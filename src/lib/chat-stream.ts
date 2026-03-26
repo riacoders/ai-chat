@@ -7,6 +7,7 @@ export type ChatStreamInput = {
   session_id?: string | null
   top_k?: number
   mode?: ChatMode
+  file?: File | null
 }
 
 export type ChatStreamSnapshot = {
@@ -88,14 +89,32 @@ export async function streamChatRequest(
   options: StreamOptions = {}
 ) {
   const { signal, collectEvents = false, onUpdate } = options
+  const formData = new FormData()
+  formData.append("question", input.question)
+
+  if (typeof input.session_id === "string" && input.session_id.trim()) {
+    formData.append("session_id", input.session_id.trim())
+  }
+
+  if (typeof input.top_k === "number" && Number.isFinite(input.top_k)) {
+    formData.append("top_k", String(input.top_k))
+  }
+
+  if (typeof input.mode === "string" && input.mode.trim()) {
+    formData.append("mode", input.mode.trim())
+  }
+
+  if (typeof File !== "undefined" && input.file instanceof File) {
+    formData.append("file", input.file)
+  }
+
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "text/event-stream, application/json",
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify(input),
+    body: formData,
     signal,
   })
 
